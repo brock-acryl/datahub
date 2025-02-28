@@ -15,6 +15,7 @@ from datahub.ingestion.api.decorators import (
 )
 from datahub.ingestion.source.sql.sql_common import SQLAlchemySource
 from datahub.ingestion.source.sql.sql_config import SQLCommonConfig
+from datahub.ingestion.source.sql.sql_job_models import StoredProcedure, ProcedureParameter
 
 
 @dataclass
@@ -75,7 +76,7 @@ class BaseStoredProcedure:
         Returns:
             A StoredProcedure instance from sql_job_models
         """
-        from datahub.ingestion.source.sql.sql_job_models import StoredProcedure, ProcedureParameter
+        
         
         # Convert parameters if they exist
         converted_params = None
