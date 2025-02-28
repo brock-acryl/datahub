@@ -50,6 +50,63 @@ class BaseView:
     column_count: Optional[int] = None
 
 
+@dataclass
+class BaseStoredProcedure:
+    name: str
+    schema: str
+    language: Optional[str] = None
+    created: Optional[datetime] = None
+    last_altered: Optional[datetime] = None
+    definition: Optional[str] = None
+    comment: Optional[str] = None
+    owner: Optional[str] = None
+    parameters: Optional[list] = None
+    return_type: Optional[str] = None
+    
+    def to_stored_procedure(self, db: str, flow, source: str):
+        """
+        Convert to a StoredProcedure from sql_job_models.
+        
+        Args:
+            db: The database name
+            flow: An instance of SQLJob or SQLProceduresContainer
+            source: The source platform name
+            
+        Returns:
+            A StoredProcedure instance from sql_job_models
+        """
+        from datahub.ingestion.source.sql.sql_job_models import StoredProcedure, ProcedureParameter
+        
+        # Convert parameters if they exist
+        converted_params = None
+        if self.parameters:
+            converted_params = [
+                ProcedureParameter(
+                    name=param.get("name", ""),
+                    type=param.get("type", ""),
+                    direction=param.get("direction"),
+                    default_value=param.get("default_value")
+                )
+                for param in self.parameters
+            ]
+            
+        return StoredProcedure(
+            db=db,
+            schema=self.schema,
+            name=self.name,
+            flow=flow,
+            source=source,
+            code=self.definition,
+            language=self.language,
+            created=self.created,
+            last_altered=self.last_altered,
+            comment=self.comment,
+            owner=self.owner,
+            parameters=converted_params,
+            return_type=self.return_type
+        )
+
+
 class SQLAlchemyGenericConfig(SQLCommonConfig):
     platform: str = Field(
         description="Name of platform being ingested, used in constructing URNs."
