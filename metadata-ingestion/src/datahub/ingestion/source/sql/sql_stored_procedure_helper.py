@@ -3,7 +3,7 @@ Helper module for working with SQL stored procedures in DataHub.
 This module provides utility functions to convert stored procedures to DataHub entities.
 """
 
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional
 
 from datahub.ingestion.source.sql.sql_generic import BaseStoredProcedure
 from datahub.ingestion.source.sql.sql_job_models import (
@@ -11,7 +11,6 @@ from datahub.ingestion.source.sql.sql_job_models import (
     ProcedureLineageStream,
     SQLDataFlow,
     SQLDataJob,
-    SQLJob,
     SQLProceduresContainer,
     StoredProcedure,
 )
@@ -26,14 +25,14 @@ def create_procedure_container(
 ) -> SQLProceduresContainer:
     """
     Create a container for stored procedures.
-    
+
     Args:
         db_name: Database name
         platform_instance: Optional platform instance name
         container_name: Name for the container
         env: Environment name
         source: Source platform name
-        
+
     Returns:
         A SQLProceduresContainer instance
     """
@@ -54,13 +53,13 @@ def create_data_flow(
 ) -> SQLDataFlow:
     """
     Create a DataFlow entity for a stored procedures container.
-    
+
     Args:
         container: The SQLProceduresContainer
         source: Source platform name
         external_url: Optional URL to external system
         properties: Optional custom properties
-        
+
     Returns:
         A SQLDataFlow instance
     """
@@ -69,11 +68,11 @@ def create_data_flow(
         source=source,
         external_url=external_url,
     )
-    
+
     if properties:
         for key, value in properties.items():
             data_flow.add_property(key, value)
-            
+
     return data_flow
 
 
@@ -85,13 +84,13 @@ def convert_base_stored_procedure(
 ) -> StoredProcedure:
     """
     Convert a BaseStoredProcedure to a StoredProcedure.
-    
+
     Args:
         base_proc: The BaseStoredProcedure instance
         db_name: Database name
         container: The SQLProceduresContainer
         source: Source platform name
-        
+
     Returns:
         A StoredProcedure instance
     """
@@ -108,7 +107,7 @@ def create_data_job(
 ) -> SQLDataJob:
     """
     Create a DataJob entity for a stored procedure.
-    
+
     Args:
         stored_proc: The StoredProcedure instance
         source: Source platform name
@@ -116,7 +115,7 @@ def create_data_job(
         external_url: Optional URL to external system
         status: Optional status
         properties: Optional custom properties
-        
+
     Returns:
         A SQLDataJob instance
     """
@@ -127,11 +126,11 @@ def create_data_job(
         external_url=external_url,
         status=status,
     )
-    
+
     if properties:
         for key, value in properties.items():
             data_job.add_property(key, value)
-            
+
     return data_job
 
 
@@ -143,7 +142,7 @@ def add_lineage_to_data_job(
 ) -> None:
     """
     Add lineage information to a DataJob.
-    
+
     Args:
         data_job: The SQLDataJob instance
         input_datasets: Optional list of input dataset URNs
@@ -152,10 +151,10 @@ def add_lineage_to_data_job(
     """
     if input_datasets:
         data_job.incoming.extend(input_datasets)
-    
+
     if output_datasets:
         data_job.outgoing.extend(output_datasets)
-    
+
     if input_jobs:
         data_job.input_jobs.extend(input_jobs)
 
@@ -171,7 +170,7 @@ def create_procedure_dependency(
 ) -> ProcedureDependency:
     """
     Create a dependency for a stored procedure.
-    
+
     Args:
         db: Database name
         schema: Schema name
@@ -180,7 +179,7 @@ def create_procedure_dependency(
         env: Environment name
         source: Source platform name
         server: Optional server name
-        
+
     Returns:
         A ProcedureDependency instance
     """
@@ -200,11 +199,11 @@ def create_procedure_lineage_stream(
 ) -> ProcedureLineageStream:
     """
     Create a lineage stream for a stored procedure.
-    
+
     Args:
         dependencies: List of ProcedureDependency instances
-        
+
     Returns:
         A ProcedureLineageStream instance
     """
-    return ProcedureLineageStream(dependencies=dependencies) 
+    return ProcedureLineageStream(dependencies=dependencies)

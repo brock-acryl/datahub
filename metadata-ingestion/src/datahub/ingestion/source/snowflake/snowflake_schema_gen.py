@@ -46,6 +46,7 @@ from datahub.ingestion.source.snowflake.snowflake_schema import (
     SnowflakeDataDictionary,
     SnowflakeFK,
     SnowflakePK,
+    SnowflakeProcedure,
     SnowflakeSchema,
     SnowflakeStream,
     SnowflakeTable,
@@ -59,6 +60,13 @@ from datahub.ingestion.source.snowflake.snowflake_utils import (
     SnowflakeStructuredReportMixin,
     SnowsightUrlBuilder,
     split_qualified_name,
+)
+from datahub.ingestion.source.sql.sql_generic import BaseStoredProcedure
+from datahub.ingestion.source.sql.sql_stored_procedure_helper import (
+    convert_base_stored_procedure,
+    create_data_job,
+    create_procedure_container,
+    create_data_flow,
 )
 from datahub.ingestion.source.sql.sql_utils import (
     add_table_to_schema_container,
@@ -428,7 +436,7 @@ class SnowflakeSchemaGenerator(SnowflakeStructuredReportMixin):
         if self.config.include_technical_schema:
             yield from self.gen_schema_containers(snowflake_schema, db_name)
 
-        tables, views, streams = [], [], []
+        tables, views, streams, procedures = [], [], [], []
 
         if self.config.include_tables:
             tables = self.fetch_tables_for_schema(
@@ -452,6 +460,13 @@ class SnowflakeSchemaGenerator(SnowflakeStructuredReportMixin):
             )
             yield from self._process_streams(streams, snowflake_schema, db_name)
 
+        if self.config.include_stored_procedures:
+            self.report.num_get_procedures_for_schema_queries += 1
+            procedures = self.fetch_procedures_for_schema(
+                snowflake_schema, db_name, schema_name
+            )
+            yield from self._process_procedures(procedures, snowflake_schema, db_name)
+
         if self.config.include_technical_schema and snowflake_schema.tags:
             yield from self._process_tags_in_schema(snowflake_schema)
 
@@ -459,9 +474,10 @@ class SnowflakeSchemaGenerator(SnowflakeStructuredReportMixin):
             not snowflake_schema.views
             and not snowflake_schema.tables
             and not snowflake_schema.streams
+            and not snowflake_schema.procedures
         ):
             self.structured_reporter.info(
-                title="No tables/views/streams found in schema",
+                title="No tables/views/streams/procedures found in schema",
                 message="If objects exist, please grant REFERENCES or SELECT permissions on them.",
                 context=f"{db_name}.{schema_name}",
             )
@@ -536,12 +552,17 @@ class SnowflakeSchemaGenerator(SnowflakeStructuredReportMixin):
         for stream in streams:
             yield from self._process_stream(stream, snowflake_schema, db_name)
 
-    def _process_tags_in_schema(
-        self, snowflake_schema: SnowflakeSchema
+    def _process_procedures(
+        self,
+        procedures: List[SnowflakeProcedure],
+        snowflake_schema: SnowflakeSchema,
+        db_name: str,
     ) -> Iterable[MetadataWorkUnit]:
-        if snowflake_schema.tags:
-            for tag in snowflake_schema.tags:
-                yield from self._process_tag(tag)
+        logger.debug(f"Processing {len(procedures)} stored procedures in {db_name}.{snowflake_schema.name}")
+        for procedure in procedures:
+            logger.debug(f"About to process stored procedure: {procedure.name}")
+            yield from self._process_procedure(procedure, snowflake_schema, db_name)
+            logger.debug(f"Finished yielding from _process_procedure for: {procedure.name}")
 
     def fetch_secure_view_definition(
         self, table_name: str, schema_name: str, db_name: str
@@ -893,7 +914,9 @@ class SnowflakeSchemaGenerator(SnowflakeStructuredReportMixin):
 
     def get_dataset_properties(
         self,
-        table: Union[SnowflakeTable, SnowflakeView, SnowflakeStream],
+        table: Union[
+            SnowflakeTable, SnowflakeView, SnowflakeStream, SnowflakeProcedure
+        ],
         schema_name: str,
         db_name: str,
     ) -> DatasetProperties:
@@ -932,6 +955,31 @@ class SnowflakeSchemaGenerator(SnowflakeStructuredReportMixin):
                         "STALE_AFTER": (
                             table.stale_after.isoformat() if table.stale_after else None
                         ),
+                    }.items()
+                    if v
+                }
+            )
+        elif isinstance(table, SnowflakeProcedure):
+            custom_properties.update(
+                {
+                    k: v
+                    for k, v in {
+                        "PROCEDURE_DEFINITION": table.procedure_definition,
+                        "PROCEDURE_LANGUAGE": table.language,
+                        "PROCEDURE_OWNER": table.owner,
+                        "PROCEDURE_CATALOG": table.database_name,
+                        "PROCEDURE_SCHEMA": table.schema_name,
+                        "PROCEDURE_NAME": table.name,
+                        "LAST_ALTERED": table.last_altered.isoformat()
+                        if table.last_altered
+                        else None,
+                        "COMMENT": table.comment,
+                        "EXTERNAL_ACCESS_INTEGRATIONS": table.external_access_integrations,
+                        "SECRETS": table.secrets,
+                        "PROCEDURE_DEFINITION": table.procedure_definition,
+                        "PROCEDURE_LANGUAGE": table.language,
+                        "ARGUMENT_SIGNATURE": table.argument_signature,
+                        "ARGUMENT_TYPES": table.argument_types,
                     }.items()
                     if v
                 }
@@ -1442,4 +1490,228 @@ class SnowflakeSchemaGenerator(SnowflakeStructuredReportMixin):
                 upstream_urn=upstream_urn,
                 downstream_urn=dataset_urn,
                 lineage_type=DatasetLineageTypeClass.COPY,
+            )
+
+    def fetch_procedures_for_schema(
+        self, snowflake_schema: SnowflakeSchema, db_name: str, schema_name: str
+    ) -> List[SnowflakeProcedure]:
+        try:
+            procedures: List[SnowflakeProcedure] = []
+            for procedure in self.get_procedures_for_schema(schema_name, db_name):
+                procedure_identifier = self.identifiers.get_dataset_identifier(
+                    procedure.name, schema_name, db_name
+                )
+
+                self.report.report_entity_scanned(procedure_identifier, "procedure")
+
+                if not self.filters.is_dataset_pattern_allowed(
+                    procedure_identifier, SnowflakeObjectDomain.STORED_PROCEDURE
+                ):
+                    logger.debug(f"Dropping stored procedure: {procedure.name}")
+                    self.report.report_dropped(procedure_identifier)
+                else:
+                    logger.debug(f"Adding stored procedure: {procedure.name}")
+                    procedures.append(procedure)
+            snowflake_schema.procedures = [procedure.name for procedure in procedures]
+            return procedures
+        except Exception as e:
+            if isinstance(e, SnowflakePermissionError):
+                error_msg = f"Failed to get procedures for schema {db_name}.{schema_name}. Please check permissions."
+                raise SnowflakePermissionError(error_msg) from e.__cause__
+            else:
+                self.structured_reporter.warning(
+                    "Failed to get procedures for schema",
+                    f"{db_name}.{schema_name}",
+                    exc=e,
+                )
+                return []
+
+    def get_procedures_for_schema(
+        self,
+        schema_name: str,
+        db_name: str,
+    ) -> List[SnowflakeProcedure]:
+        procedures = self.data_dictionary.get_procedures_for_database(db_name)
+
+        return procedures.get(schema_name, [])
+
+    def _process_procedure(
+        self,
+        procedure: SnowflakeProcedure,
+        snowflake_schema: SnowflakeSchema,
+        db_name: str,
+    ) -> Iterable[MetadataWorkUnit]:
+        try:
+            schema_name = snowflake_schema.name
+            logger.debug(f"Starting to process procedure: {procedure.name} in {db_name}.{schema_name}")
+            # procedure_identifier = self.identifiers.get_dataset_identifier(
+            #     procedure.name, schema_name, db_name
+            # )
+
+            if self.config.extract_tags != TagOption.skip:
+                logger.debug(f"Extracting tags for procedure: {procedure.name}")
+                procedure.tags = self.tag_extractor.get_tags_on_object(
+                    table_name=procedure.name,
+                    schema_name=schema_name,
+                    db_name=db_name,
+                    domain="procedure",
+                )
+
+            # Create a container for stored procedures if needed
+            logger.debug(f"Creating container for procedure: {procedure.name}")
+            container = create_procedure_container(
+                db_name=db_name,
+                platform_instance=self.config.platform_instance,
+                container_name=f"{db_name}.{schema_name}.procedures",
+                env=self.config.env,
+                source=self.platform,
+            )
+
+            # Convert the Snowflake procedure to a base stored procedure
+            logger.debug(f"Converting procedure to base stored procedure: {procedure.name}")
+            base_proc = BaseStoredProcedure(
+                name=procedure.name,
+                schema=schema_name,
+                language=procedure.language,
+                created=procedure.created,
+                last_altered=procedure.last_altered,
+                definition=procedure.procedure_definition,
+                comment=procedure.comment,
+                owner=procedure.owner,
+                #argument_signature=procedure.argument_signature,
+                #argument_types=procedure.argument_types,
+            )
+
+            # Convert to a StoredProcedure
+            logger.debug(f"Converting to StoredProcedure: {procedure.name}")
+            stored_proc = convert_base_stored_procedure(
+                base_proc=base_proc,
+                db_name=db_name,
+                container=container,
+                source=self.platform,
+            )
+
+            # Create a data job for the procedure
+            logger.debug(f"Creating data job for procedure: {procedure.name}")
+            external_url = (
+                self.snowsight_url_builder.get_external_url_for_procedure(
+                    procedure.name, schema_name, db_name
+                )
+                if self.snowsight_url_builder
+                else None
+            )
+
+            data_job = create_data_job(
+                stored_proc=stored_proc,
+                source=self.platform,
+                description=procedure.comment,
+                external_url=external_url,
+                properties={
+                    "language": procedure.language or "",
+                    "owner": procedure.owner or "",
+                    "database": db_name,
+                    "schema": schema_name,
+                },
+            )
+
+            # Process tags if they exist
+            if self.config.include_technical_schema and procedure.tags:
+                logger.debug(f"Processing tags for procedure: {procedure.name}")
+                for tag in procedure.tags:
+                    yield from self._process_tag(tag)
+
+            # Create a data flow for the container
+            logger.debug(f"Creating data flow for procedure container: {procedure.name}")
+            data_flow = create_data_flow(
+                container=container,
+                source=self.platform,
+                external_url=None,
+                properties={"database": db_name, "schema": schema_name},
+            )
+
+            # Add the data flow to workunits
+            logger.debug(f"Generating data flow work units for procedure: {procedure.name}")
+            mcp = MetadataChangeProposalWrapper(
+                entityType="dataFlow",
+                entityUrn=data_flow.urn,
+                aspectName="dataFlowInfo",
+                aspect=data_flow.as_dataflow_info_aspect,
+            )
+            yield MetadataWorkUnit(id=f"{data_flow.urn}-dataFlowInfo", mcp=mcp)
+
+            # Add platform instance if available
+            if data_flow.as_maybe_platform_instance_aspect:
+                logger.debug(f"Adding platform instance to data flow for procedure: {procedure.name}")
+                mcp = MetadataChangeProposalWrapper(
+                    entityType="dataFlow",
+                    entityUrn=data_flow.urn,
+                    aspectName="dataPlatformInstance",
+                    aspect=data_flow.as_maybe_platform_instance_aspect,
+                )
+                yield MetadataWorkUnit(id=f"{data_flow.urn}-dataPlatformInstance", mcp=mcp)
+
+            # Add container aspect
+            logger.debug(f"Adding container aspect to data flow for procedure: {procedure.name}")
+            mcp = MetadataChangeProposalWrapper(
+                entityType="dataFlow",
+                entityUrn=data_flow.urn,
+                aspectName="container",
+                aspect=data_flow.as_container_aspect,
+            )
+            yield MetadataWorkUnit(id=f"{data_flow.urn}-container", mcp=mcp)
+
+            # Log the final URN for debugging
+            logger.info(f"Adding stored procedure with URN: {data_job.urn}")
+            logger.debug(f"Stored procedure details: db={db_name}, schema={schema_name}, name={procedure.name}")
+            logger.debug(f"Container: {container.formatted_name}")
+            logger.debug(f"Data job properties: {data_job.valued_properties}")
+
+            # Generate work units for the data job
+            logger.debug(f"Generating data job work units for procedure: {procedure.name}")
+            # Create dataJobInfo aspect
+            mcp = MetadataChangeProposalWrapper(
+                entityType="dataJob",
+                entityUrn=data_job.urn,
+                aspectName="dataJobInfo",
+                aspect=data_job.as_datajob_info_aspect,
+            )
+            yield MetadataWorkUnit(id=f"{data_job.urn}-dataJobInfo", mcp=mcp)
+
+            # Add platform instance if available
+            if data_job.as_maybe_platform_instance_aspect:
+                logger.debug(f"Adding platform instance to data job for procedure: {procedure.name}")
+                mcp = MetadataChangeProposalWrapper(
+                    entityType="dataJob",
+                    entityUrn=data_job.urn,
+                    aspectName="dataPlatformInstance",
+                    aspect=data_job.as_maybe_platform_instance_aspect,
+                )
+                yield MetadataWorkUnit(id=f"{data_job.urn}-dataPlatformInstance", mcp=mcp)
+
+            # Add container aspect
+            logger.debug(f"Adding container aspect to data job for procedure: {procedure.name}")
+            mcp = MetadataChangeProposalWrapper(
+                entityType="dataJob",
+                entityUrn=data_job.urn,
+                aspectName="container",
+                aspect=data_job.as_container_aspect,
+            )
+            yield MetadataWorkUnit(id=f"{data_job.urn}-container", mcp=mcp)
+
+            # Add empty input/output aspect (to be filled in by lineage analysis)
+            logger.debug(f"Adding input/output aspect to data job for procedure: {procedure.name}")
+            mcp = MetadataChangeProposalWrapper(
+                entityType="dataJob",
+                entityUrn=data_job.urn,
+                aspectName="dataJobInputOutput",
+                aspect=data_job.as_datajob_input_output_aspect,
+            )
+            yield MetadataWorkUnit(id=f"{data_job.urn}-dataJobInputOutput", mcp=mcp)
+            logger.debug(f"Finished processing procedure: {procedure.name}")
+        except Exception as e:
+            logger.error(f"Error processing procedure {procedure.name}: {e}", exc_info=True)
+            self.structured_reporter.warning(
+                "Failed to process stored procedure",
+                f"{db_name}.{snowflake_schema.name}.{procedure.name}",
+                exc=e,
             )

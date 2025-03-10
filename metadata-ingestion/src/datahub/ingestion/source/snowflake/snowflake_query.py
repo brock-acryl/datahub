@@ -38,6 +38,7 @@ class SnowflakeQuery:
         SnowflakeObjectDomain.MATERIALIZED_VIEW.capitalize(),
         SnowflakeObjectDomain.ICEBERG_TABLE.capitalize(),
         SnowflakeObjectDomain.STREAM.capitalize(),
+        SnowflakeObjectDomain.STORED_PROCEDURE.capitalize(),
     }
 
     ACCESS_HISTORY_TABLE_VIEW_DOMAINS_FILTER = "({})".format(
@@ -48,6 +49,7 @@ class SnowflakeQuery:
         f"'{SnowflakeObjectDomain.TABLE.capitalize()}',"
         f"'{SnowflakeObjectDomain.VIEW.capitalize()}',"
         f"'{SnowflakeObjectDomain.STREAM.capitalize()}',"
+        f"'{SnowflakeObjectDomain.STORED_PROCEDURE.capitalize()}',"
         ")"
     )
 
@@ -984,3 +986,86 @@ WHERE table_schema='{schema_name}' AND {extra_clause}"""
             f"""FROM '{stream_pagination_marker}'""" if stream_pagination_marker else ""
         )
         return f"""SHOW STREAMS IN DATABASE {db_name} LIMIT {limit} {from_clause};"""
+
+    @staticmethod
+    def procedures_for_database(db_name: str) -> str:
+        return f"""SELECT * FROM {db_name}.INFORMATION_SCHEMA.PROCEDURES;"""
+
+    @staticmethod
+    def stored_procedure_lineage(
+        start_time_millis: int,
+        end_time_millis: int,
+    ) -> str:
+        """
+        Query to extract stored procedure lineage from Snowflake.
+        
+        This query finds the initial procedure execution query_id by looking for domain='PROCEDURE',
+        then finds all related queries by matching the root_query_id.
+        """
+        return f"""
+        WITH procedure_executions AS (
+            SELECT 
+                query_id,
+                root_query_id,
+              --  query_text,
+                query_start_time,
+                objects_modified,
+                direct_objects_accessed,
+                base_objects_accessed
+            FROM 
+                snowflake.account_usage.access_history t,
+                lateral flatten(input => t.BASE_OBJECTS_ACCESSED) b,
+            WHERE 
+                query_start_time >= to_timestamp_ltz({start_time_millis}, 3)
+                AND query_start_time < to_timestamp_ltz({end_time_millis}, 3)
+                AND b.value : "objectDomain" = 'Procedure'
+        ),
+        related_queries AS (
+            SELECT 
+                ah.query_id,
+                ah.root_query_id,
+              --  ah.query_text,
+                ah.query_start_time,
+                ah.objects_modified,
+                ah.direct_objects_accessed,
+                ah.base_objects_accessed
+            FROM 
+                snowflake.account_usage.access_history ah
+            JOIN 
+                procedure_executions pe
+            ON 
+                ah.root_query_id = pe.query_id
+            WHERE 
+                ah.query_start_time >= to_timestamp_ltz({start_time_millis}, 3)
+                AND ah.query_start_time < to_timestamp_ltz({end_time_millis}, 3)
+        )
+        SELECT 
+            pe.query_id AS procedure_query_id,
+            pqt.query_text AS procedure_query_text,
+            pe.query_start_time AS procedure_start_time,
+            pe.objects_modified AS procedure_objects_modified,
+            pe.direct_objects_accessed AS procedure_direct_objects_accessed,
+            pe.base_objects_accessed AS procedure_base_objects_accessed,
+            rq.query_id AS related_query_id,
+            rqt.query_text AS related_query_text,
+            rq.query_start_time AS related_start_time,
+            rq.objects_modified AS related_objects_modified,
+            rq.direct_objects_accessed AS related_direct_objects_accessed,
+            rq.base_objects_accessed AS related_base_objects_accessed
+        FROM 
+            procedure_executions pe
+        LEFT JOIN 
+            related_queries rq
+        ON 
+            pe.query_id = rq.root_query_id
+        LEFT JOIN
+            snowflake.account_usage.query_history pqt
+        ON 
+            pe.query_id = pqt.query_id
+        LEFT JOIN
+            snowflake.account_usage.query_history rqt
+        ON 
+            rq.query_id = rqt.query_id
+        ORDER BY 
+            pe.query_start_time DESC, rq.query_start_time ASC;
+        """

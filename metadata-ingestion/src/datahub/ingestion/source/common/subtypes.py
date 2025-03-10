@@ -7,6 +7,7 @@ class DatasetSubTypes(StrEnum):
     VIEW = "View"
     TOPIC = "Topic"
     SCHEMA = "Schema"
+    STORED_PROCEDURE = "Stored Procedure"
     # System-Specific SubTypes
     LOOKER_EXPLORE = "Explore"
     ELASTIC_INDEX_TEMPLATE = "Index Template"

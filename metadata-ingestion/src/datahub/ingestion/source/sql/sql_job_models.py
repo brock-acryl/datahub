@@ -26,6 +26,7 @@ class ProcedureDependency:
     """
     Represents a dependency of a stored procedure on another database object.
     """
+
     db: str
     schema: str
     name: str
@@ -44,6 +45,7 @@ class ProcedureLineageStream:
     """
     Represents lineage information for a stored procedure.
     """
+
     dependencies: List[ProcedureDependency]
 
     @property
@@ -58,6 +60,7 @@ class SQLJob:
     """
     Generic representation of a SQL job (could be a stored procedure, job, etc.)
     """
+
     db: str
     platform_instance: Optional[str]
     name: str
@@ -87,6 +90,7 @@ class SQLProceduresContainer:
     """
     Container for a group of stored procedures.
     """
+
     db: str
     platform_instance: Optional[str]
     name: str
@@ -116,6 +120,7 @@ class ProcedureParameter:
     """
     Represents a parameter of a stored procedure.
     """
+
     name: str
     type: str
     direction: Optional[str] = None  # IN, OUT, INOUT, etc.
@@ -136,6 +141,7 @@ class StoredProcedure:
     """
     Generic representation of a stored procedure.
     """
+
     db: str
     schema: str
     name: str
@@ -173,6 +179,7 @@ class JobStep:
     """
     Represents a step in a SQL job.
     """
+
     job_name: str
     step_name: str
     flow: SQLJob
@@ -205,6 +212,7 @@ class SQLDataJob:
     """
     Represents a data job in DataHub, which could be a stored procedure or a job step.
     """
+
     entity: Union[StoredProcedure, JobStep]
     type: str = "dataJob"
     source: str = None  # Will be set by the specific source implementation
@@ -296,6 +304,7 @@ class SQLDataFlow:
     """
     Represents a data flow in DataHub, which could be a job or a procedures container.
     """
+
     entity: Union[SQLJob, SQLProceduresContainer]
     type: str = "dataFlow"
     source: str = None  # Will be set by the specific source implementation
@@ -345,4 +354,4 @@ class SQLDataFlow:
             env=self.entity.env,
             database=self.entity.db,
         )
-        return ContainerClass(container=databaseKey.as_urn()) 
+        return ContainerClass(container=databaseKey.as_urn())

@@ -101,6 +101,11 @@ class SnowsightUrlBuilder:
     def get_external_url_for_database(self, db_name: str) -> Optional[str]:
         return f"{self.snowsight_base_url}#/data/databases/{db_name}/"
 
+    def get_external_url_for_procedure(
+        self, procedure_name: str, schema_name: str, db_name: str
+    ) -> Optional[str]:
+        return f"{self.snowsight_base_url}#/data/databases/{db_name}/schemas/{schema_name}/procedure/{procedure_name}"
+
 
 class SnowflakeFilter:
     def __init__(
@@ -125,6 +130,7 @@ class SnowflakeFilter:
             SnowflakeObjectDomain.MATERIALIZED_VIEW,
             SnowflakeObjectDomain.ICEBERG_TABLE,
             SnowflakeObjectDomain.STREAM,
+            SnowflakeObjectDomain.STORED_PROCEDURE,
         ):
             return False
         if _is_sys_table(dataset_name):

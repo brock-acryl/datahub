@@ -62,21 +62,24 @@ class BaseStoredProcedure:
     owner: Optional[str] = None
     parameters: Optional[list] = None
     return_type: Optional[str] = None
-    
+
     def to_stored_procedure(self, db: str, flow, source: str):
         """
         Convert to a StoredProcedure from sql_job_models.
-        
+
         Args:
             db: The database name
             flow: An instance of SQLJob or SQLProceduresContainer
             source: The source platform name
-            
+
         Returns:
             A StoredProcedure instance from sql_job_models
         """
-        from datahub.ingestion.source.sql.sql_job_models import StoredProcedure, ProcedureParameter
-        
+        from datahub.ingestion.source.sql.sql_job_models import (
+            ProcedureParameter,
+            StoredProcedure,
+        )
+
         # Convert parameters if they exist
         converted_params = None
         if self.parameters:
@@ -85,11 +88,11 @@ class BaseStoredProcedure:
                     name=param.get("name", ""),
                     type=param.get("type", ""),
                     direction=param.get("direction"),
-                    default_value=param.get("default_value")
+                    default_value=param.get("default_value"),
                 )
                 for param in self.parameters
             ]
-            
+
         return StoredProcedure(
             db=db,
             schema=self.schema,
@@ -103,7 +106,7 @@ class BaseStoredProcedure:
             comment=self.comment,
             owner=self.owner,
             parameters=converted_params,
-            return_type=self.return_type
+            return_type=self.return_type,
         )
 
 
