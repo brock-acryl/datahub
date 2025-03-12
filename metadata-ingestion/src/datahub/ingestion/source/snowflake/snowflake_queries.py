@@ -136,6 +136,37 @@ class SnowflakeQueriesSourceReport(SourceReport):
     queries_extractor: Optional[SnowflakeQueriesExtractorReport] = None
 
 
+@dataclass
+class ProcedureQueryInfo:
+    """Holds information about a query that might be related to a stored procedure."""
+    query_id: str
+    root_query_id: str
+    query_text: str
+    direct_objects_accessed: List[Dict[str, Any]]
+    objects_modified: List[Dict[str, Any]]
+
+    def extract_table_objects(self, objects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Extract table/view objects from a list of objects."""
+        result = []
+        for obj in objects:
+            if obj.get("objectDomain") in SnowflakeQuery.ACCESS_HISTORY_TABLE_VIEW_DOMAINS:
+                object_name = obj.get("objectName")
+                if object_name:
+                    result.append({
+                        "objectName": object_name,
+                        "objectDomain": obj.get("objectDomain")
+                    })
+        return result
+
+    @property
+    def upstream_objects(self) -> List[Dict[str, Any]]:
+        return self.extract_table_objects(self.direct_objects_accessed)
+
+    @property
+    def downstream_objects(self) -> List[Dict[str, Any]]:
+        return self.extract_table_objects(self.objects_modified)
+
+
 class SnowflakeQueriesExtractor(SnowflakeStructuredReportMixin, Closeable):
     def __init__(
         self,
@@ -187,6 +218,10 @@ class SnowflakeQueriesExtractor(SnowflakeStructuredReportMixin, Closeable):
             )
         )
         self.report.sql_aggregator = self.aggregator.report
+
+        # Initialize collections for procedure lineage
+        self.procedure_queries = {}  # root_query_id -> procedure_name
+        self.potential_procedure_calls = []  # List[ProcedureQueryInfo]
 
     @property
     def structured_reporter(self) -> SourceReport:
@@ -397,6 +432,15 @@ class SnowflakeQueriesExtractor(SnowflakeStructuredReportMixin, Closeable):
         objects_modified = res["objects_modified"]
         object_modified_by_ddl = res["object_modified_by_ddl"]
 
+        # Collect stored procedure information
+        self._collect_stored_procedure_info(res)
+
+        # If the query is a procedure call, skip it
+        if any(
+            obj.get("objectDomain") == "Procedure" for obj in direct_objects_accessed
+        ):
+            return None
+
         if object_modified_by_ddl and not objects_modified:
             known_ddl_entry: Optional[Union[TableRename, TableSwap]] = None
             with self.structured_reporter.report_exc(
@@ -579,159 +623,91 @@ class SnowflakeQueriesExtractor(SnowflakeStructuredReportMixin, Closeable):
             self.report.num_ddl_queries_dropped += 1
             return None
 
+    def _collect_stored_procedure_info(self, res: dict) -> None:
+        """
+        Collect information about stored procedures and their related queries.
+        This is called from _parse_audit_log_row after the row has been parsed.
+        """
+        query_id = res.get("query_id")
+        root_query_id = res.get("root_query_id")
+        
+        if not query_id:
+            return
+
+        # Check if this is a procedure definition
+        if res.get("direct_objects_accessed"):
+            for obj in res["direct_objects_accessed"]:
+                if obj.get("objectDomain") == "Procedure":
+                    logger.info(f"""procedure_name: {obj.get("objectName")}""")
+                    logger.info(f"""query_id: {query_id}""")
+                    procedure_name = obj.get("objectName")
+                    if procedure_name:
+                        self.procedure_queries[query_id] = procedure_name
+                        break
+
+        # Store any query that has a root_query_id for potential procedure calls
+        if root_query_id:
+            logger.info(f"""root_query_id: {root_query_id}""")
+            self.potential_procedure_calls.append(
+                ProcedureQueryInfo(
+                    query_id=query_id,
+                    root_query_id=root_query_id,
+                    query_text=res.get("query_text", ""),
+                    direct_objects_accessed=res.get("direct_objects_accessed", []),
+                    objects_modified=res.get("objects_modified", [])
+                )
+            )
+
     def extract_stored_procedure_lineage(self) -> None:
         """
-        Extract and process stored procedure lineage from Snowflake.
-        
-        This method queries Snowflake for stored procedure executions and their related queries,
-        then processes the results to extract lineage information.
+        Process collected stored procedure information to create lineage.
+        This should be called after all queries have been processed through _parse_audit_log_row.
         """
         if not self.config.include_lineage:
             return
-        
-        with PerfTimer() as timer:
-            try:
-                query = SnowflakeQuery.stored_procedure_lineage(
-                    start_time_millis=int(self.config.window.start_time.timestamp() * 1000),
-                    end_time_millis=int(self.config.window.end_time.timestamp() * 1000),
-                )
-                
-                for row in self.connection.query(query):
-                    # Handle JSON fields
-                    json_fields = {
-                        "PROCEDURE_DIRECT_OBJECTS_ACCESSED",
-                        "RELATED_DIRECT_OBJECTS_ACCESSED",
-                        "RELATED_OBJECTS_MODIFIED",
-                    }
-                    
-                    res = {}
-                    for key, value in row.items():
-                        if key in json_fields and value:
-                            value = json.loads(value)
-                        key = key.lower()
-                        res[key] = value
-                    
-                    # Skip if no related query
-                    if not res.get("related_query_id"):
-                        continue
-                    
-                    # Get the stored procedure name from procedure_direct_objects_accessed
-                    procedure_name = None
-                    logger.info(f"""Procedure direct objects accessed: {res.get("procedure_direct_objects_accessed")}""")
-                    if res.get("procedure_direct_objects_accessed"):
-                        for obj in res["procedure_direct_objects_accessed"]:
-                            if obj.get("objectDomain") == "Procedure":
-                                procedure_name = obj.get("objectName")
-                                break
-                    
-                    if not procedure_name:
-                        continue
-                    
-                    # Extract upstream objects from related queries
-                    upstream_objects = []
-                    logger.info(f"""Related direct objects accessed: {res.get("related_direct_objects_accessed")}""")
-                    if res.get("related_direct_objects_accessed"):
-                        for obj in res["related_direct_objects_accessed"]:
-                            if obj.get("objectDomain") in SnowflakeQuery.ACCESS_HISTORY_TABLE_VIEW_DOMAINS:
-                                object_name = obj.get("objectName")
-                                if object_name:
-                                    upstream_objects.append({
-                                        "objectName": object_name,
-                                        "objectDomain": obj.get("objectDomain")
-                                    })
-                    
-                    # Extract downstream objects from related queries
-                    downstream_objects = []
-                    logger.info(f"""Related objects modified: {res.get("related_objects_modified")}""")
-                    if res.get("related_objects_modified"):
-                        for obj in res["related_objects_modified"]:
-                            if obj.get("objectDomain") in SnowflakeQuery.ACCESS_HISTORY_TABLE_VIEW_DOMAINS:
-                                object_name = obj.get("objectName")
-                                if object_name:
-                                    downstream_objects.append({
-                                        "objectName": object_name,
-                                        "objectDomain": obj.get("objectDomain")
-                                    })
-                    
-                    # Create lineage for upstream to downstream relationships
-                    if upstream_objects and downstream_objects:
-                        for upstream in upstream_objects:
-                            upstream_name = upstream.get("objectName")
-                            for downstream in downstream_objects:
-                                downstream_name = downstream.get("objectName")
-                                
-                                # Skip self-references
-                                if upstream_name == downstream_name:
-                                    continue
-                                
-                                try:
-                                    self.aggregator.add_observed_query(
-                                        query_text=res.get("related_query_text"),
-                                        query_id=res.get("related_query_id"),
-                                        query_timestamp=None,
-                                        in_tables=[upstream_name],
-                                        out_tables=[downstream_name],
-                                    )
-                                    self.structured_reporter.num_procedure_lineage_edges_scanned += 1
-                                    logger.info(f"""process upstream->downstream lineage for {upstream_name} -> {downstream_name}""")
-                                except Exception as e:
-                                    logger.warning(
-                                        f"Failed to process upstream->downstream lineage for {upstream_name} -> {downstream_name}: {e}"
-                                    )
-                    
-                    # Create lineage for upstream to stored procedure relationships
-                    if upstream_objects:
-                        for upstream in upstream_objects:
-                            upstream_name = upstream.get("objectName")
-                            try:
-                                self.aggregator.add_observed_query(
-                                    query_text=res.get("procedure_query_text"),
-                                    query_id=res.get("procedure_query_id"),
-                                    query_timestamp=None,
-                                    in_tables=[upstream_name],
-                                    out_tables=[procedure_name],
-                                )
-                                self.structured_reporter.num_procedure_lineage_edges_scanned += 1
-                                logger.info(f"""process upstream->procedure lineage for {upstream_name} -> {procedure_name}""")
-                            except Exception as e:
-                                logger.warning(
-                                    f"Failed to process upstream->procedure lineage for {upstream_name} -> {procedure_name}: {e}"
-                                )
-                    
-                    # Create lineage for stored procedure to downstream relationships
-                    if downstream_objects:
-                        for downstream in downstream_objects:
-                            downstream_name = downstream.get("objectName")
-                            try:
-                                self.aggregator.add_observed_query(
-                                    query_text=res.get("procedure_query_text"),
-                                    query_id=res.get("procedure_query_id"),
-                                    query_timestamp=None,
-                                    in_tables=[procedure_name],
-                                    out_tables=[downstream_name],
-                                )
-                                self.structured_reporter.num_procedure_lineage_edges_scanned += 1
-                                logger.info(f"""process procedure->downstream lineage for {procedure_name} -> {downstream_name}""")
-                            except Exception as e:
-                                logger.warning(
-                                    f"Failed to process procedure->downstream lineage for {procedure_name} -> {downstream_name}: {e}"
-                                )
+
+        logger.info(f"""Extracting stored procedure lineage from Snowflake {self.potential_procedure_calls}""")
+        # Process each potential procedure call
+        for query_info in self.potential_procedure_calls:
+            if query_info.root_query_id not in self.procedure_queries:
+                continue
+
+            procedure_name = self.procedure_queries[query_info.root_query_id]
             
-                self.structured_reporter.procedure_lineage_extraction_sec = timer.elapsed_seconds()
-                
-            except Exception as e:
-                if isinstance(e, SnowflakePermissionError):
-                    error_msg = "Failed to get stored procedure lineage. Please grant imported privileges on SNOWFLAKE database. "
-                    self.structured_reporter.warning(
-                        title="Failed to get stored procedure lineage",
-                        message=error_msg,
-                        exc=e,
+            # Create lineage for upstream to procedure relationships
+            for upstream in query_info.upstream_objects:
+                upstream_name = upstream.get("objectName")
+                try:
+                    self.aggregator.add_observed_query(
+                        query_text=query_info.query_text,
+                        query_id=query_info.query_id,
+                        query_timestamp=None,
+                        in_tables=[upstream_name],
+                        out_tables=[procedure_name],
                     )
-                else:
-                    self.structured_reporter.warning(
-                        title="Error fetching stored procedure lineage from Snowflake",
-                        message="Failed to extract stored procedure lineage",
-                        exc=e,
+                    self.structured_reporter.num_procedure_lineage_edges_scanned += 1
+                    logger.info(f"Processed upstream->procedure lineage for {upstream_name} -> {procedure_name}")
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to process upstream->procedure lineage for {upstream_name} -> {procedure_name}: {e}"
+                    )
+            
+            # Create lineage for procedure to downstream relationships
+            for downstream in query_info.downstream_objects:
+                downstream_name = downstream.get("objectName")
+                try:
+                    self.aggregator.add_observed_query(
+                        query_text=query_info.query_text,
+                        query_id=query_info.query_id,
+                        query_timestamp=None,
+                        in_tables=[procedure_name],
+                        out_tables=[downstream_name],
+                    )
+                    self.structured_reporter.num_procedure_lineage_edges_scanned += 1
+                    logger.info(f"Processed procedure->downstream lineage for {procedure_name} -> {downstream_name}")
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to process procedure->downstream lineage for {procedure_name} -> {downstream_name}: {e}"
                     )
 
     def close(self) -> None:
@@ -839,7 +815,8 @@ fingerprinted_queries as (
         user_name,
         direct_objects_accessed,
         objects_modified,
-        object_modified_by_ddl
+        object_modified_by_ddl,
+        root_query_id
     FROM
         snowflake.account_usage.access_history
     WHERE
@@ -855,6 +832,7 @@ fingerprinted_queries as (
     SELECT
         query_id,
         query_start_time,
+        root_query_id,
         ARRAY_SLICE(
             FILTER(direct_objects_accessed, o -> o:objectDomain IN {SnowflakeQuery.ACCESS_HISTORY_TABLE_VIEW_DOMAINS_FILTER}),
             0, {_MAX_TABLES_PER_QUERY}
@@ -885,7 +863,8 @@ fingerprinted_queries as (
         q.role_name AS "ROLE_NAME",
         a.direct_objects_accessed,
         a.objects_modified,
-        a.object_modified_by_ddl
+        a.object_modified_by_ddl,
+        a.root_query_id
     FROM deduplicated_queries q
     JOIN filtered_access_history a USING (query_id)
 )
