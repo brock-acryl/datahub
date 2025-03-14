@@ -65,6 +65,10 @@ from datahub.sql_parsing.sqlglot_lineage import (
 from datahub.sql_parsing.sqlglot_utils import get_query_fingerprint
 from datahub.utilities.file_backed_collections import ConnectionWrapper, FileBackedList
 from datahub.utilities.perf_timer import PerfTimer
+from datahub.ingestion.source.sql.sql_stored_procedure_helper import add_lineage_to_data_job, generate_procedure_lineage
+from datahub.ingestion.source.sql.sql_job_models import SQLDataJob, StoredProcedure, SQLProceduresContainer
+from datahub.emitter.mcp import MetadataChangeProposalWrapper
+
 
 logger = logging.getLogger(__name__)
 
@@ -144,7 +148,11 @@ class ProcedureQueryInfo:
     query_text: str
     direct_objects_accessed: List[Dict[str, Any]]
     objects_modified: List[Dict[str, Any]]
-
+    query_count: int
+    user: str
+    timestamp: str
+    session_id: str
+    query_type: QueryType
     def extract_table_objects(self, objects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Extract table/view objects from a list of objects."""
         result = []
@@ -309,10 +317,10 @@ class SnowflakeQueriesExtractor(SnowflakeStructuredReportMixin, Closeable):
             with self.report.query_log_fetch_timer:
                 for entry in self.fetch_query_log(users):
                     queries.append(entry)
-
-        # Extract stored procedure lineage before adding entries to the SQL aggregator
-        logger.info("Extracting stored procedure lineage")
-        self.extract_stored_procedure_lineage()
+                    # Add debug logging
+            logger.info("Starting stored procedure lineage extraction")
+            yield from self.extract_stored_procedure_lineage()
+            logger.info("Completed stored procedure lineage extraction")
 
         with self.report.audit_log_load_timer:
             for i, query in enumerate(queries):
@@ -432,14 +440,6 @@ class SnowflakeQueriesExtractor(SnowflakeStructuredReportMixin, Closeable):
         objects_modified = res["objects_modified"]
         object_modified_by_ddl = res["object_modified_by_ddl"]
 
-        # Collect stored procedure information
-        self._collect_stored_procedure_info(res)
-
-        # If the query is a procedure call, skip it
-        if any(
-            obj.get("objectDomain") == "Procedure" for obj in direct_objects_accessed
-        ):
-            return None
 
         if object_modified_by_ddl and not objects_modified:
             known_ddl_entry: Optional[Union[TableRename, TableSwap]] = None
@@ -465,6 +465,16 @@ class SnowflakeQueriesExtractor(SnowflakeStructuredReportMixin, Closeable):
                 res["user_name"], users.get(res["user_name"])
             )
         )
+
+        # Collect stored procedure information
+        self._collect_stored_procedure_info(res, user)
+
+        # If the query is a procedure call, skip it
+        if any(
+            obj.get("objectDomain") == "Procedure" for obj in direct_objects_accessed
+        ):
+            return None
+
 
         # Use direct_objects_accessed instead objects_modified
         # objects_modified returns $SYS_VIEW_X with no mapping
@@ -623,16 +633,16 @@ class SnowflakeQueriesExtractor(SnowflakeStructuredReportMixin, Closeable):
             self.report.num_ddl_queries_dropped += 1
             return None
 
-    def _collect_stored_procedure_info(self, res: dict) -> None:
+    def _collect_stored_procedure_info(self, res: dict, user: CorpUserUrn) -> None:
         """
         Collect information about stored procedures and their related queries.
         This is called from _parse_audit_log_row after the row has been parsed.
         """
         query_id = res.get("query_id")
         root_query_id = res.get("root_query_id")
-        
-        if not query_id:
-            return
+
+        timestamp: datetime = res["query_start_time"]
+        timestamp = timestamp.astimezone(timezone.utc)
 
         # Check if this is a procedure definition
         if res.get("direct_objects_accessed"):
@@ -648,67 +658,110 @@ class SnowflakeQueriesExtractor(SnowflakeStructuredReportMixin, Closeable):
         # Store any query that has a root_query_id for potential procedure calls
         if root_query_id:
             logger.info(f"""root_query_id: {root_query_id}""")
+
+            query_type = SNOWFLAKE_QUERY_TYPE_MAPPING.get(
+                        res["query_type"], QueryType.UNKNOWN
+                    )
+            
             self.potential_procedure_calls.append(
                 ProcedureQueryInfo(
                     query_id=query_id,
                     root_query_id=root_query_id,
                     query_text=res.get("query_text", ""),
                     direct_objects_accessed=res.get("direct_objects_accessed", []),
-                    objects_modified=res.get("objects_modified", [])
+                    objects_modified=res.get("objects_modified", []),
+                    query_count=res.get("query_count", 0),
+                    user=user,
+                    timestamp=timestamp,
+                    session_id=res.get("session_id", ""),
+                    query_type=query_type
                 )
             )
 
-    def extract_stored_procedure_lineage(self) -> None:
+    def extract_stored_procedure_lineage(self) -> Iterable[MetadataWorkUnit]:
         """
         Process collected stored procedure information to create lineage.
-        This should be called after all queries have been processed through _parse_audit_log_row.
+        Uses sql_stored_procedure_helper to generate lineage information consistently.
         """
         if not self.config.include_lineage:
             return
 
-        logger.info(f"""Extracting stored procedure lineage from Snowflake {self.potential_procedure_calls}""")
+        logger.info(f"Extracting stored procedure lineage from Snowflake {self.potential_procedure_calls}")
+        
         # Process each potential procedure call
         for query_info in self.potential_procedure_calls:
             if query_info.root_query_id not in self.procedure_queries:
                 continue
 
             procedure_name = self.procedure_queries[query_info.root_query_id]
+            logger.info(f"procedure_name: {procedure_name}")
+            logger.info(f"query_info: {query_info}")
+
+            procedure_db = procedure_name.split(".")[0]
+            procedure_schema = procedure_name.split(".")[1]
+
+            # Create a container for the stored procedure
+            flow = SQLProceduresContainer(
+                db=procedure_db,
+                platform_instance=self.identifiers.identifier_config.platform_instance,
+                name=f"{procedure_db}.{procedure_schema}.procedures",
+                env=self.identifiers.identifier_config.env,
+                source=self.identifiers.platform,
+            )
+
+            # Create a StoredProcedure instance with the existing information
+            stored_proc = StoredProcedure(
+                db=procedure_db,
+                schema=procedure_schema,
+                name=procedure_name,
+                flow=flow,
+                source=self.identifiers.platform,
+                code=query_info.query_text,
+            )
+
+            # Create the data job for metadata purposes
+            data_job = SQLDataJob(
+                entity=stored_proc,
+                source=self.identifiers.platform,
+            )
+
+            # Add lineage information from query info
+            add_lineage_to_data_job(
+                data_job=data_job,
+                input_datasets=[
+                    self.identifiers.gen_dataset_urn(
+                        self.identifiers.get_dataset_identifier_from_qualified_name(
+                            upstream.get("objectName")
+                        )
+                    )
+                    for upstream in query_info.upstream_objects
+                ],
+                output_datasets=[
+                    self.identifiers.gen_dataset_urn(
+                        self.identifiers.get_dataset_identifier_from_qualified_name(
+                            downstream.get("objectName")
+                        )
+                    )
+                    for downstream in query_info.downstream_objects
+                ],
+            )
+
+            # Generate detailed lineage from procedure code
+            yield from generate_procedure_lineage(
+                schema_resolver=self.aggregator._schema_resolver,
+                procedure=stored_proc,
+                procedure_job_urn=data_job.urn,
+                is_temp_table=self.is_temp_table,
+            )
+
+            self.structured_reporter.num_procedure_lineage_edges_scanned += (
+                len(query_info.upstream_objects) + len(query_info.downstream_objects)
+            )
             
-            # Create lineage for upstream to procedure relationships
-            for upstream in query_info.upstream_objects:
-                upstream_name = upstream.get("objectName")
-                try:
-                    self.aggregator.add_observed_query(
-                        query_text=query_info.query_text,
-                        query_id=query_info.query_id,
-                        query_timestamp=None,
-                        in_tables=[upstream_name],
-                        out_tables=[procedure_name],
-                    )
-                    self.structured_reporter.num_procedure_lineage_edges_scanned += 1
-                    logger.info(f"Processed upstream->procedure lineage for {upstream_name} -> {procedure_name}")
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to process upstream->procedure lineage for {upstream_name} -> {procedure_name}: {e}"
-                    )
-            
-            # Create lineage for procedure to downstream relationships
-            for downstream in query_info.downstream_objects:
-                downstream_name = downstream.get("objectName")
-                try:
-                    self.aggregator.add_observed_query(
-                        query_text=query_info.query_text,
-                        query_id=query_info.query_id,
-                        query_timestamp=None,
-                        in_tables=[procedure_name],
-                        out_tables=[downstream_name],
-                    )
-                    self.structured_reporter.num_procedure_lineage_edges_scanned += 1
-                    logger.info(f"Processed procedure->downstream lineage for {procedure_name} -> {downstream_name}")
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to process procedure->downstream lineage for {procedure_name} -> {downstream_name}: {e}"
-                    )
+            logger.info(
+                f"Processed procedure lineage for {procedure_name} with "
+                f"{len(query_info.upstream_objects)} inputs and {len(query_info.downstream_objects)} outputs"
+            )
 
     def close(self) -> None:
         self._exit_stack.close()
