@@ -125,9 +125,13 @@ class UnityCatalogSourceConfig(
     LowerCaseDatasetUrnConfigMixin,
 ):
     # Authentication fields
+    auth_type: Literal["token", "azure_oauth"] = pydantic.Field(
+        default="token",
+        description="Authentication type to use. Options are 'token' for Personal Access Token or 'azure_oauth' for Azure OAuth",
+    )
     token: Optional[str] = pydantic.Field(
         default=None,
-        description="Databricks personal access token (required if not using Azure OAuth)",
+        description="Databricks personal access token (required if using token authentication)",
     )
     azure_client_id: Optional[str] = pydantic.Field(
         default=None,
@@ -297,17 +301,22 @@ class UnityCatalogSourceConfig(
 
     def get_sql_alchemy_url(self, database: Optional[str] = None) -> str:
         if self.azure_workspace_resource_id:
-            raise ValueError("SQLAlchemy connections are not supported when using Azure OAuth authentication")
-            
+            raise ValueError(
+                "SQLAlchemy connections are not supported when using Azure OAuth authentication"
+            )
+
         uri_opts = {"http_path": f"/sql/1.0/warehouses/{self.warehouse_id}"}
         if database:
             uri_opts["catalog"] = database
+
+        # Add type assertion to ensure workspace_url is str
+        netloc = urlparse(str(self.workspace_url)).netloc
 
         return make_sqlalchemy_uri(
             scheme=self.scheme,
             username="token",
             password=self.token,
-            at=urlparse(self.workspace_url).netloc,
+            at=netloc,  # Now we know this is str
             db=database,
             uri_opts=uri_opts,
         )
@@ -332,21 +341,46 @@ class UnityCatalogSourceConfig(
 
     @pydantic.root_validator
     def validate_auth_config(cls, values: Dict[str, Any]) -> Dict[str, Any]:
-        # If using token auth
-        if values.get("token"):
+        auth_type = values.get("auth_type", "token")
+
+        if auth_type == "token":
+            if not values.get("token"):
+                raise ValueError("token is required when using token authentication")
             if not values.get("workspace_url"):
-                raise ValueError("workspace_url must be provided when using token authentication")
-        # If using Azure OAuth
-        elif any([values.get("azure_client_id"), values.get("azure_client_secret"), values.get("azure_tenant_id"), values.get("azure_workspace_resource_id")]):
-            if not all([values.get("azure_client_id"), values.get("azure_client_secret"), values.get("azure_tenant_id"), values.get("azure_workspace_resource_id")]):
-                raise ValueError("azure_client_id, azure_client_secret, azure_tenant_id, and azure_workspace_resource_id must all be provided when using Azure OAuth")
-        else:
-            raise ValueError("Either (workspace_url and token) or (azure_client_id, azure_client_secret, azure_tenant_id, and azure_workspace_resource_id) must be provided")
+                raise ValueError(
+                    "workspace_url is required when using token authentication"
+                )
+            # Clear Azure OAuth fields if they exist
+            values["azure_client_id"] = None
+            values["azure_client_secret"] = None
+            values["azure_tenant_id"] = None
+            values["azure_workspace_resource_id"] = None
+        elif auth_type == "azure_oauth":
+            if not values.get("azure_client_id"):
+                raise ValueError("azure_client_id is required when using Azure OAuth")
+            if not values.get("azure_client_secret"):
+                raise ValueError(
+                    "azure_client_secret is required when using Azure OAuth"
+                )
+            if not values.get("azure_tenant_id"):
+                raise ValueError("azure_tenant_id is required when using Azure OAuth")
+            if not values.get("azure_workspace_resource_id"):
+                raise ValueError(
+                    "azure_workspace_resource_id is required when using Azure OAuth"
+                )
+            # Clear token fields if they exist
+            values["token"] = None
+            values["workspace_url"] = None
+
         return values
 
     @pydantic.validator("workspace_url")
-    def workspace_url_should_start_with_http_scheme(cls, workspace_url: Optional[str]) -> Optional[str]:
-        if workspace_url and not workspace_url.lower().startswith(("http://", "https://")):
+    def workspace_url_should_start_with_http_scheme(
+        cls, workspace_url: Optional[str]
+    ) -> Optional[str]:
+        if workspace_url and not workspace_url.lower().startswith(
+            ("http://", "https://")
+        ):
             raise ValueError(
                 "Workspace URL must start with http scheme. e.g. https://my-workspace.cloud.databricks.com"
             )

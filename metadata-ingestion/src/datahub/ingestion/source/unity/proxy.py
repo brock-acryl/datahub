@@ -26,7 +26,6 @@ from databricks.sdk.service.sql import (
 )
 from databricks.sdk.service.workspace import ObjectType
 
-from datahub._version import nice_version_name
 from datahub.emitter.mce_builder import parse_ts_millis
 from datahub.ingestion.source.unity.hive_metastore_proxy import HiveMetastoreProxy
 from datahub.ingestion.source.unity.proxy_profiling import (
@@ -102,28 +101,41 @@ class UnityCatalogApiProxy(UnityCatalogProxyProfilingMixin):
         warehouse_id: Optional[str] = None,
         report: Optional[UnityCatalogReport] = None,
         hive_metastore_proxy: Optional[HiveMetastoreProxy] = None,
+        auth_type: str = "token",
     ):
-        self.report = report
+        self.report = report or UnityCatalogReport()
         self.warehouse_id = warehouse_id or ""
 
-        # Initialize the Databricks SDK client
-        if token and workspace_url:
-            self._workspace_client = WorkspaceClient(
-                host=workspace_url,
-                token=token,
-                warehouse_id=warehouse_id,
-            )
-        elif all([azure_client_id, azure_client_secret, azure_tenant_id, azure_workspace_resource_id]):
+        # Initialize the Databricks SDK client based on auth_type
+        if auth_type == "azure_oauth":
+            if not all(
+                [
+                    azure_client_id,
+                    azure_client_secret,
+                    azure_tenant_id,
+                    azure_workspace_resource_id,
+                ]
+            ):
+                raise ValueError(
+                    "azure_client_id, azure_client_secret, azure_tenant_id, and azure_workspace_resource_id are required when using Azure OAuth"
+                )
             self._workspace_client = WorkspaceClient(
                 azure_client_id=azure_client_id,
                 azure_client_secret=azure_client_secret,
                 azure_tenant_id=azure_tenant_id,
-                azure_workspace_resource_id=azure_workspace_resource_id
+                azure_workspace_resource_id=azure_workspace_resource_id,
+            )
+        elif auth_type == "token":
+            if not token or not workspace_url:
+                raise ValueError(
+                    "workspace_url and token are required when using token authentication"
+                )
+            self._workspace_client = WorkspaceClient(
+                host=workspace_url,
+                token=token,
             )
         else:
-            raise ValueError(
-                "Either (workspace_url and token) or (azure_client_id, azure_client_secret, azure_tenant_id, and azure_workspace_resource_id) must be provided"
-            )
+            raise ValueError("auth_type must be either 'token' or 'azure_oauth'")
 
         self.hive_metastore_proxy = hive_metastore_proxy
 

@@ -1,4 +1,5 @@
 ### Prerequisities
+#### Using token based authentication
 - Get your Databricks instance's [workspace url](https://docs.databricks.com/workspace/workspace-details.html#workspace-instance-names-urls-and-ids)
 - Create a [Databricks Service Principal](https://docs.databricks.com/administration-guide/users-groups/service-principals.html#what-is-a-service-principal)
   + You can skip this step and use your own account to get things running quickly,
@@ -6,14 +7,19 @@
 - Generate a Databricks Personal Access token following the following guides:
   + [Service Principals](https://docs.databricks.com/administration-guide/users-groups/service-principals.html#personal-access-tokens)
   + [Personal Access Tokens](https://docs.databricks.com/dev-tools/auth.html#databricks-personal-access-tokens)
-- Provision your service account:
+
+#### Using Azure OAuth
+- Follow Azure's documentation for setup https://learn.microsoft.com/en-us/azure/databricks/dev-tools/auth/oauth-m2m
+
+
+#### Provision your service account:
   + To ingest your workspace's metadata and lineage, your service principal must have all of the following:
     * One of: metastore admin role, ownership of, or `USE CATALOG` privilege on any catalogs you want to ingest
     * One of: metastore admin role, ownership of, or `USE SCHEMA` privilege on any schemas you want to ingest
     * Ownership of or `SELECT` privilege on any tables and views you want to ingest
     * [Ownership documentation](https://docs.databricks.com/data-governance/unity-catalog/manage-privileges/ownership.html)
     * [Privileges documentation](https://docs.databricks.com/data-governance/unity-catalog/manage-privileges/privileges.html)
-  + To ingest legacy hive_metastore catalog (`include_hive_metastore` - enabled by default), your service principal must have all of the following:
+  + To ingest legacy hive_metastore catalog (`include_hive_metastore` - enabled by default)(only available with token authentication), your service principal must have all of the following:
     * `READ_METADATA` and `USAGE` privilege on `hive_metastore` catalog
     * `READ_METADATA` and `USAGE` privilege on schemas you want to ingest
     * `READ_METADATA` and `USAGE` privilege on tables and views you want to ingest

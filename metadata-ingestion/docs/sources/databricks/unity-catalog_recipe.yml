@@ -3,6 +3,11 @@ source:
   config:
     workspace_url: https://my-workspace.cloud.databricks.com
     token: "<token>"
+#    auth_type: azure_oauth
+#    azure_workspace_resource_id: "<azure-workspace-resource-id>"
+#    azure_client_id: "<azure-client-id>"
+#    azure_client_secret: "<azure-client-secret>"
+#    azure_tenant_id: "<azure-tenant-id>"
     include_metastore: false
     include_ownership: true
     profiling:
@@ -14,6 +19,7 @@ source:
       pattern:
         deny:
           - ".*\\.unwanted_schema"
+
 
 #    emit_siblings: true
 #    delta_lake_options:

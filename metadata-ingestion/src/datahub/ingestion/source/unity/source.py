@@ -182,20 +182,28 @@ class UnityCatalogSource(StatefulIngestionSourceBase, TestableSource):
             azure_workspace_resource_id=config.azure_workspace_resource_id,
             warehouse_id=config.warehouse_id,
             report=self.report,
+            auth_type=config.auth_type,
         )
 
         # Only initialize Hive metastore proxy if not using Azure OAuth
         if not config.azure_workspace_resource_id:
             self.init_hive_metastore_proxy()
-            self.unity_catalog_api_proxy.hive_metastore_proxy = self.hive_metastore_proxy
+            self.unity_catalog_api_proxy.hive_metastore_proxy = (
+                self.hive_metastore_proxy
+            )
 
         # Determine the platform_instance_name
         self.platform_instance_name = self.config.platform_instance
         if self.config.include_metastore:
+            workspace_url = config.workspace_url
+            if workspace_url is None:
+                raise ValueError(
+                    "workspace_url is required when include_metastore is True"
+                )
             self.platform_instance_name = (
                 config.workspace_name
                 if config.workspace_name is not None
-                else config.workspace_url.split("//")[1].split(".")[0]
+                else workspace_url.split("//")[1].split(".")[0]
             )
 
         if self.config.domain:
@@ -210,7 +218,9 @@ class UnityCatalogSource(StatefulIngestionSourceBase, TestableSource):
         self.table_refs: Set[TableReference] = set()
         self.view_refs: Set[TableReference] = set()
         self.notebooks: FileBackedDict[Notebook] = FileBackedDict()
-        self.view_definitions: FileBackedDict[Tuple[TableReference, str]] = FileBackedDict()
+        self.view_definitions: FileBackedDict[Tuple[TableReference, str]] = (
+            FileBackedDict()
+        )
 
         # Global map of tables, for profiling
         self.tables: FileBackedDict[Table] = FileBackedDict()
@@ -383,7 +393,7 @@ class UnityCatalogSource(StatefulIngestionSourceBase, TestableSource):
                     name=notebook.path.rsplit("/", 1)[-1],
                     customProperties=properties,
                     externalUrl=urljoin(
-                        self.config.workspace_url, f"#notebook/{notebook.id}"
+                        self.config.workspace_url or "", f"#notebook/{notebook.id}"
                     ),
                     created=(
                         TimeStampClass(int(notebook.created_at.timestamp() * 1000))
@@ -723,11 +733,14 @@ class UnityCatalogSource(StatefulIngestionSourceBase, TestableSource):
         domain_urn = self._gen_domain_urn(f"{schema.catalog.name}.{schema.name}")
 
         schema_container_key = self.gen_schema_key(schema)
-        
+
         # Only generate external URL if we have a workspace URL
         external_url = None
         if self.config.workspace_url:
-            external_url = urljoin(self.config.workspace_url, f"/explore/data/{schema.catalog.name}/{schema.name}")
+            external_url = urljoin(
+                self.config.workspace_url,
+                f"/explore/data/{schema.catalog.name}/{schema.name}",
+            )
 
         yield from gen_containers(
             container_key=schema_container_key,
@@ -746,6 +759,13 @@ class UnityCatalogSource(StatefulIngestionSourceBase, TestableSource):
         domain_urn = self._gen_domain_urn(metastore.name)
 
         metastore_container_key = self.gen_metastore_key(metastore)
+        # Only generate external URL if we have a workspace URL
+        external_url = None
+        if self.config.workspace_url:
+            external_url = urljoin(
+                self.config.workspace_url, f"/explore/data/{metastore.name}"
+            )
+
         yield from gen_containers(
             container_key=metastore_container_key,
             name=metastore.name,
@@ -753,18 +773,20 @@ class UnityCatalogSource(StatefulIngestionSourceBase, TestableSource):
             domain_urn=domain_urn,
             description=metastore.comment,
             owner_urn=self.get_owner_urn(metastore.owner),
-            external_url=self.external_url_base,
+            external_url=external_url,
         )
 
     def gen_catalog_containers(self, catalog: Catalog) -> Iterable[MetadataWorkUnit]:
         domain_urn = self._gen_domain_urn(catalog.name)
 
         catalog_container_key = self.gen_catalog_key(catalog)
-        
+
         # Only generate external URL if we have a workspace URL
         external_url = None
         if self.config.workspace_url:
-            external_url = urljoin(self.config.workspace_url, f"/explore/data/{catalog.name}")
+            external_url = urljoin(
+                self.config.workspace_url, f"/explore/data/{catalog.name}"
+            )
 
         yield from gen_containers(
             container_key=catalog_container_key,
@@ -889,7 +911,9 @@ class UnityCatalogSource(StatefulIngestionSourceBase, TestableSource):
         # Only generate external URL if we have a workspace URL
         external_url = None
         if self.config.workspace_url:
-            external_url = urljoin(self.config.workspace_url, f"/explore/data/{table.ref.external_path}")
+            external_url = urljoin(
+                self.config.workspace_url, f"/explore/data/{table.ref.external_path}"
+            )
 
         return DatasetPropertiesClass(
             name=table.name,
