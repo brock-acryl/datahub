@@ -93,20 +93,38 @@ class UnityCatalogApiProxy(UnityCatalogProxyProfilingMixin):
 
     def __init__(
         self,
-        workspace_url: str,
-        personal_access_token: str,
-        warehouse_id: Optional[str],
-        report: UnityCatalogReport,
+        workspace_url: Optional[str] = None,
+        token: Optional[str] = None,
+        azure_client_id: Optional[str] = None,
+        azure_client_secret: Optional[str] = None,
+        azure_tenant_id: Optional[str] = None,
+        azure_workspace_resource_id: Optional[str] = None,
+        warehouse_id: Optional[str] = None,
+        report: Optional[UnityCatalogReport] = None,
         hive_metastore_proxy: Optional[HiveMetastoreProxy] = None,
     ):
-        self._workspace_client = WorkspaceClient(
-            host=workspace_url,
-            token=personal_access_token,
-            product="datahub",
-            product_version=nice_version_name(),
-        )
-        self.warehouse_id = warehouse_id or ""
         self.report = report
+        self.warehouse_id = warehouse_id or ""
+
+        # Initialize the Databricks SDK client
+        if token and workspace_url:
+            self._workspace_client = WorkspaceClient(
+                host=workspace_url,
+                token=token,
+                warehouse_id=warehouse_id,
+            )
+        elif all([azure_client_id, azure_client_secret, azure_tenant_id, azure_workspace_resource_id]):
+            self._workspace_client = WorkspaceClient(
+                azure_client_id=azure_client_id,
+                azure_client_secret=azure_client_secret,
+                azure_tenant_id=azure_tenant_id,
+                azure_workspace_resource_id=azure_workspace_resource_id
+            )
+        else:
+            raise ValueError(
+                "Either (workspace_url and token) or (azure_client_id, azure_client_secret, azure_tenant_id, and azure_workspace_resource_id) must be provided"
+            )
+
         self.hive_metastore_proxy = hive_metastore_proxy
 
     def check_basic_connectivity(self) -> bool:

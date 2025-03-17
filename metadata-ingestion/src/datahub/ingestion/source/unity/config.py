@@ -124,9 +124,30 @@ class UnityCatalogSourceConfig(
     StatefulProfilingConfigMixin,
     LowerCaseDatasetUrnConfigMixin,
 ):
-    token: str = pydantic.Field(description="Databricks personal access token")
-    workspace_url: str = pydantic.Field(
-        description="Databricks workspace url. e.g. https://my-workspace.cloud.databricks.com"
+    # Authentication fields
+    token: Optional[str] = pydantic.Field(
+        default=None,
+        description="Databricks personal access token (required if not using Azure OAuth)",
+    )
+    azure_client_id: Optional[str] = pydantic.Field(
+        default=None,
+        description="Azure AD client ID (required if using Azure OAuth)",
+    )
+    azure_client_secret: Optional[str] = pydantic.Field(
+        default=None,
+        description="Azure AD client secret (required if using Azure OAuth)",
+    )
+    azure_tenant_id: Optional[str] = pydantic.Field(
+        default=None,
+        description="Azure AD tenant ID (required if using Azure OAuth)",
+    )
+    azure_workspace_resource_id: Optional[str] = pydantic.Field(
+        default=None,
+        description="Azure resource ID of the Databricks workspace (required if using Azure OAuth)",
+    )
+    workspace_url: Optional[str] = pydantic.Field(
+        default=None,
+        description="Databricks workspace url. e.g. https://my-workspace.cloud.databricks.com (required if using token auth)",
     )
     warehouse_id: Optional[str] = pydantic.Field(
         default=None,
@@ -275,9 +296,13 @@ class UnityCatalogSourceConfig(
     scheme: str = DATABRICKS
 
     def get_sql_alchemy_url(self, database: Optional[str] = None) -> str:
+        if self.azure_workspace_resource_id:
+            raise ValueError("SQLAlchemy connections are not supported when using Azure OAuth authentication")
+            
         uri_opts = {"http_path": f"/sql/1.0/warehouses/{self.warehouse_id}"}
         if database:
             uri_opts["catalog"] = database
+
         return make_sqlalchemy_uri(
             scheme=self.scheme,
             username="token",
@@ -305,9 +330,23 @@ class UnityCatalogSourceConfig(
             raise ValueError("Query history is only maintained for 30 days.")
         return v
 
+    @pydantic.root_validator
+    def validate_auth_config(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+        # If using token auth
+        if values.get("token"):
+            if not values.get("workspace_url"):
+                raise ValueError("workspace_url must be provided when using token authentication")
+        # If using Azure OAuth
+        elif any([values.get("azure_client_id"), values.get("azure_client_secret"), values.get("azure_tenant_id"), values.get("azure_workspace_resource_id")]):
+            if not all([values.get("azure_client_id"), values.get("azure_client_secret"), values.get("azure_tenant_id"), values.get("azure_workspace_resource_id")]):
+                raise ValueError("azure_client_id, azure_client_secret, azure_tenant_id, and azure_workspace_resource_id must all be provided when using Azure OAuth")
+        else:
+            raise ValueError("Either (workspace_url and token) or (azure_client_id, azure_client_secret, azure_tenant_id, and azure_workspace_resource_id) must be provided")
+        return values
+
     @pydantic.validator("workspace_url")
-    def workspace_url_should_start_with_http_scheme(cls, workspace_url: str) -> str:
-        if not workspace_url.lower().startswith(("http://", "https://")):
+    def workspace_url_should_start_with_http_scheme(cls, workspace_url: Optional[str]) -> Optional[str]:
+        if workspace_url and not workspace_url.lower().startswith(("http://", "https://")):
             raise ValueError(
                 "Workspace URL must start with http scheme. e.g. https://my-workspace.cloud.databricks.com"
             )
