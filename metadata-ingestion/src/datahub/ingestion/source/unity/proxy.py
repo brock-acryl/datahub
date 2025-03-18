@@ -26,6 +26,7 @@ from databricks.sdk.service.sql import (
 )
 from databricks.sdk.service.workspace import ObjectType
 
+from datahub._version import nice_version_name
 from datahub.emitter.mce_builder import parse_ts_millis
 from datahub.ingestion.source.unity.hive_metastore_proxy import HiveMetastoreProxy
 from datahub.ingestion.source.unity.proxy_profiling import (
@@ -124,6 +125,8 @@ class UnityCatalogApiProxy(UnityCatalogProxyProfilingMixin):
                 azure_client_secret=azure_client_secret,
                 azure_tenant_id=azure_tenant_id,
                 azure_workspace_resource_id=azure_workspace_resource_id,
+                product="datahub",
+                product_version=nice_version_name(),
             )
         elif auth_type == "token":
             if not token or not workspace_url:
@@ -133,6 +136,8 @@ class UnityCatalogApiProxy(UnityCatalogProxyProfilingMixin):
             self._workspace_client = WorkspaceClient(
                 host=workspace_url,
                 token=token,
+                product="datahub",
+                product_version=nice_version_name(),
             )
         else:
             raise ValueError("auth_type must be either 'token' or 'azure_oauth'")

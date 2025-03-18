@@ -316,7 +316,7 @@ class UnityCatalogSourceConfig(
             scheme=self.scheme,
             username="token",
             password=self.token,
-            at=netloc,  # Now we know this is str
+            at=netloc,
             db=database,
             uri_opts=uri_opts,
         )
@@ -435,3 +435,17 @@ class UnityCatalogSourceConfig(
     ) -> AllowDenyPattern:
         v.deny.append(".*\\.information_schema")
         return v
+
+    @pydantic.root_validator(skip_on_failure=True)
+    def validate_profiling_config(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+        auth_type = values.get("auth_type", "token")
+        profiling = values.get("profiling")
+
+        if auth_type != "token" and profiling and profiling.enabled:
+            if profiling.method == "ge":
+                raise ValueError(
+                    "Great Expectations profiling is only supported with token authentication. "
+                    "Please use profile.method: analyze or disable profiling."
+                )
+
+        return values

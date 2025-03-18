@@ -1066,7 +1066,7 @@ class UnityCatalogSource(StatefulIngestionSourceBase, TestableSource):
         yield from builder.gen_workunits()
 
     def close(self):
-        if not self.config.azure_workspace_resource_id:
+        if self.config.auth_type == "token":
             if self.hive_metastore_proxy:
                 self.hive_metastore_proxy.close()
         if self.view_definitions:
