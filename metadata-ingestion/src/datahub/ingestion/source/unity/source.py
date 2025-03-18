@@ -1035,35 +1035,38 @@ class UnityCatalogSource(StatefulIngestionSourceBase, TestableSource):
         return view_definition_lineage_helper(raw_lineage, view_urn)
 
     def get_view_lineage(self) -> Iterable[MetadataWorkUnit]:
-        if not (
-            self.config.include_hive_metastore
-            and self.config.include_table_lineage
-            and self.sql_parser_schema_resolver
-        ):
-            return
-        # This is only used for parsing view lineage. Usage, Operations are emitted elsewhere
-        builder = SqlParsingBuilder(
-            generate_lineage=True,
-            generate_usage_statistics=False,
-            generate_operations=False,
-        )
-        for dataset_name in self.view_definitions.keys():
-            view_ref, view_definition = self.view_definitions[dataset_name]
-            result = self._run_sql_parser(
-                view_ref,
-                view_definition,
-                self.sql_parser_schema_resolver,
+        for table in self.tables:
+            if not table.is_view:
+                continue
+
+            if not table.view_definition:
+                continue
+
+            # Get lineage information using Unity Catalog API
+            lineage_info = self.unity_catalog_api_proxy.get_view_lineage(table.ref)
+            if not lineage_info:
+                continue
+
+            # Process upstream tables from lineage info
+            for upstream in lineage_info.get("upstreams", []):
+                if "tableInfo" in upstream:
+                    table_ref = TableReference.create_from_lineage(
+                        upstream["tableInfo"], 
+                        table.schema.catalog.metastore
+                    )
+                    if table_ref:
+                        table.upstreams[table_ref] = {}
+
+            # Generate lineage workunit
+            lineage_aspect = self._generate_lineage_aspect(
+                self.gen_dataset_urn(table.ref),
+                table
             )
-            if result and result.out_tables:
-                # This does not yield any workunits but we use
-                # yield here to execute this method
-                yield from builder.process_sql_parsing_result(
-                    result=result,
-                    query=view_definition,
-                    is_view_ddl=True,
-                    include_column_lineage=self.config.include_view_column_lineage,
-                )
-        yield from builder.gen_workunits()
+            if lineage_aspect is not None:
+                yield MetadataChangeProposalWrapper(
+                    entityUrn=self.gen_dataset_urn(table.ref),
+                    aspect=lineage_aspect,
+                ).as_workunit()
 
     def close(self):
         if self.config.auth_type == "token":

@@ -527,3 +527,30 @@ class UnityCatalogApiProxy(UnityCatalogProxyProfilingMixin):
             executed_as_user_id=info.executed_as_user_id,
             executed_as_user_name=info.executed_as_user_name,
         )
+
+    def get_view_definition(self, table_ref: TableReference) -> Optional[str]:
+        """Get view definition using Unity Catalog API instead of SQLAlchemy"""
+        try:
+            table_info = self._workspace_client.tables.get(table_ref.qualified_table_name)
+            return table_info.view_definition
+        except Exception as e:
+            self.report.report_warning(
+                "view-definition",
+                f"Failed to get view definition for {table_ref}: {e}",
+            )
+            return None
+
+    def get_view_lineage(self, table_ref: TableReference) -> Optional[Dict[str, Any]]:
+        """Get view lineage using Unity Catalog API"""
+        try:
+            # Use the lineage API to get upstream tables for the view
+            return self.list_lineages_by_table(
+                table_name=table_ref.qualified_table_name,
+                include_entity_lineage=True,
+            )
+        except Exception as e:
+            self.report.report_warning(
+                "view-lineage",
+                f"Failed to get view lineage for {table_ref}: {e}",
+            )
+            return None
