@@ -12,6 +12,7 @@ import DomainRoutesV2 from '@app/domainV2/DomainRoutes';
 import { ManageDomainsPage as ManageDomainsPageV2 } from '@app/domainV2/ManageDomainsPage';
 import { EntityPage } from '@app/entity/EntityPage';
 import { EntityPage as EntityPageV2 } from '@app/entityV2/EntityPage';
+import { ImportEntitiesPage } from '@app/import/ImportEntitiesPage';
 import GlossaryRoutes from '@app/glossary/GlossaryRoutes';
 import GlossaryRoutesV2 from '@app/glossaryV2/GlossaryRoutes';
 import StructuredProperties from '@app/govern/structuredProperties/StructuredProperties';
@@ -106,6 +107,7 @@ export const SearchRoutes = (): JSX.Element => {
                     />
                 )}
 
+                <Route path={PageRoutes.IMPORT_ENTITIES} render={() => <ImportEntitiesPage />} />
                 {!showIngestV2 && <Route path={PageRoutes.INGESTION} render={() => <ManageIngestionPage />} />}
                 {showIngestV2 && <Route path={PageRoutes.INGESTION} render={() => <ManageIngestionPageV2 />} />}
 

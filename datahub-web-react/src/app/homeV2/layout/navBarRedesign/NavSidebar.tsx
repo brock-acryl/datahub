@@ -1,5 +1,6 @@
 import {
     AppWindow,
+    ArrowSquareDown,
     BookBookmark,
     Gear,
     Globe,
@@ -109,6 +110,7 @@ export const NavSidebar = () => {
     const showManageTags =
         config?.featureFlags?.showManageTags &&
         (me.platformPrivileges?.manageTags || me.platformPrivileges?.viewManageTags);
+    const showEntityImport = config?.featureFlags?.showEntityImport ?? true;
     const businessAttributesFlag = useBusinessAttributesFlag();
 
     const showDataSources =
@@ -227,6 +229,15 @@ export const NavSidebar = () => {
                         icon: <Plugs />,
                         selectedIcon: <Plugs weight="fill" />,
                         link: PageRoutes.INGESTION,
+                    },
+                    {
+                        type: NavBarMenuItemTypes.Item,
+                        title: 'Entity Import',
+                        key: 'entityImport',
+                        isHidden: !showEntityImport,
+                        icon: <ArrowSquareDown />,
+                        selectedIcon: <ArrowSquareDown weight="fill" />,
+                        link: PageRoutes.IMPORT_ENTITIES,
                     },
                     {
                         type: NavBarMenuItemTypes.Item,
