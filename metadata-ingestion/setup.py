@@ -45,6 +45,7 @@ framework_common = {
     "Deprecated",
     "humanfriendly",
     "packaging",
+    "rdflib>=6.2.0",
     "aiohttp<4",
     "cached_property",
     "ijson",
