@@ -4,6 +4,7 @@ import static io.datahubproject.openlineage.converter.OpenLineageToDataHub.*;
 
 import com.linkedin.common.DataJobUrnArray;
 import com.linkedin.common.DataPlatformInstance;
+import com.linkedin.common.DataTransformLogic;
 import com.linkedin.common.DatasetUrnArray;
 import com.linkedin.common.Edge;
 import com.linkedin.common.EdgeArray;
@@ -87,6 +88,7 @@ public class DatahubJob {
   DataProcessInstanceProperties dataProcessInstanceProperties;
   DataProcessInstanceRelationships dataProcessInstanceRelationships;
   Urn dataProcessInstanceUrn;
+  DataTransformLogic dataTransformLogic;
 
   final Set<DatahubDataset> inSet = new TreeSet<>(new DataSetComparator());
   final Set<DatahubDataset> outSet = new TreeSet<>(new DataSetComparator());
@@ -137,6 +139,13 @@ public class DatahubJob {
     log.info("Setting custom properties for job: {}", jobUrn);
     jobInfo.setCustomProperties(customProperties);
     addAspectToMcps(jobUrn, DATAJOB_ENTITY_TYPE, jobInfo, mcps);
+
+    if (dataTransformLogic != null
+        && dataTransformLogic.hasTransforms()
+        && dataTransformLogic.getTransforms() != null
+        && !dataTransformLogic.getTransforms().isEmpty()) {
+      addAspectToMcps(jobUrn, DATAJOB_ENTITY_TYPE, dataTransformLogic, mcps);
+    }
     generateStatus(jobUrn, DATAJOB_ENTITY_TYPE, mcps);
 
     // Generate and add tags Aspect
