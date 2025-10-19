@@ -1,0 +1,45 @@
+{
+  "sections": [
+    {
+      "visualContainers": [
+        {
+          "name": "VisualContainer1",
+          "config": {
+            "name": "Revenue Visual",
+            "singleVisual": {
+              "visualType": "table",
+              "projections": {
+                "Values": [
+                  {"queryRef": "Sales[Revenue]"},
+                  {"queryRef": "[Total Profit]"}
+                ]
+              },
+              "prototypeQuery": {
+                "queries": [
+                  {"query": "EVALUATE SUMX('Sales', 'Sales'[Revenue])"}
+                ]
+              }
+            },
+            "objects": {
+              "general": [
+                {
+                  "properties": {
+                    "formatString": {
+                      "expr": {
+                        "expression": "SUM('Sales'[Revenue])"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "VisualContainer2",
+          "config": "{\"name\":\"Calendar Card\",\"singleVisual\":{\"visualType\":\"card\",\"projections\":{\"Values\":[{\"queryRef\":\"Calendar[Date]\"}]}}}"
+        }
+      ]
+    }
+  ]
+}

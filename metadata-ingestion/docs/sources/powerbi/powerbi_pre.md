@@ -4,7 +4,6 @@
 2. Enable admin access if you want to ingest data source and dataset information, including lineage, and endorsement tags. Refer section [Admin Ingestion vs. Basic Ingestion](#admin-ingestion-vs-basic-ingestion) for more detail.
 
    Login to PowerBI as Admin and from `Admin API settings` allow below permissions
-
    - Allow service principals to use read-only admin APIs
    - Enhance admin APIs responses with detailed metadata
    - Enhance admin APIs responses with DAX and mashup expressions
@@ -37,6 +36,12 @@ You can control table lineage ingestion using `extract_lineage` configuration pa
 PowerBI Source extracts the lineage information by parsing PowerBI M-Query expressions and from dataset data returned by the PowerBI API.
 
 The source will attempt to extract information from ODBC connection strings in M-Query expressions to determine the database type. If the database type matches a supported platform and the source is able to extract enough information to construct a valid Dataset URN, it will extract lineage for that data source.
+
+### Fine-grained (column-level) lineage
+
+In addition to dataset-level lineage, the source can optionally emit column-level relationships between Power BI dataset fields and report visuals. To enable this feature, set `extract_fine_grained_lineage: true` and provide `pbitools_project_root` pointing to an extracted [pbi-tools](https://pbi.tools/) project that contains the `Report/report.json` (or legacy `Report/layout.json`) file for the report. When enabled, the connector parses the visual bindings and DAX expressions from that JSON to produce FineGrainedLineage edges such as `Sales.Revenue → visuals.Revenue_Visual.data`.
+
+Fine-grained lineage requires `extract_dataset_schema: true` so that schema field paths are available. If no pbi-tools project is found, ingestion continues without emitting the additional lineage.
 
 PowerBI Source will extract lineage for the below listed PowerBI Data Sources:
 

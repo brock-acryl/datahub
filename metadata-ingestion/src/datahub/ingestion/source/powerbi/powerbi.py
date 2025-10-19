@@ -5,8 +5,9 @@
 #########################################################
 import functools
 import logging
+import re
 from datetime import datetime
-from typing import Iterable, List, Optional, Tuple, Union
+from typing import Dict, Iterable, List, Optional, Set, Tuple, Union
 
 import more_itertools
 
@@ -54,6 +55,12 @@ from datahub.ingestion.source.powerbi.dataplatform_instance_resolver import (
 )
 from datahub.ingestion.source.powerbi.m_query import parser
 from datahub.ingestion.source.powerbi.rest_api_wrapper.powerbi_api import PowerBiAPI
+from datahub.ingestion.source.powerbi.visual_lineage import (
+    VisualUpstreamResult,
+    canonicalize_field_path,
+    canonicalize_identifier,
+    extract_visual_upstreams,
+)
 from datahub.ingestion.source.state.stale_entity_removal_handler import (
     StaleEntityRemovalHandler,
 )
@@ -133,6 +140,9 @@ class Mapper:
         self.__reporter = reporter
         self.__dataplatform_instance_resolver = dataplatform_instance_resolver
         self.workspace_key: Optional[ContainerKey] = None
+        self._dataset_fields: Dict[str, List[str]] = {}
+        self._dataset_field_lookup: Dict[str, Dict[str, str]] = {}
+        self._table_to_dataset_urn: Dict[str, str] = {}
 
     @staticmethod
     def urn_to_lowercase(value: str, flag: bool) -> str:
@@ -180,11 +190,57 @@ class Mapper:
         self, table: powerbi_data_classes.Table, ds_urn: str
     ) -> List[MetadataChangeProposalWrapper]:
         schema_metadata = self.to_datahub_schema(table)
+        fields = [
+            field.fieldPath for field in schema_metadata.fields or [] if field.fieldPath
+        ]
+        if fields:
+            self._dataset_fields[ds_urn] = fields
+            lookup: Dict[str, str] = {}
+            for field_path in fields:
+                canonical = canonicalize_field_path(field_path)
+                if canonical:
+                    lookup.setdefault(canonical, field_path)
+                parts = field_path.split(".")
+                if parts:
+                    column_canonical = canonicalize_field_path(parts[-1])
+                    if column_canonical:
+                        lookup.setdefault(column_canonical, field_path)
+            self._dataset_field_lookup[ds_urn] = lookup
         schema_mcp = self.new_mcp(
             entity_urn=ds_urn,
             aspect=schema_metadata,
         )
         return [schema_mcp]
+
+    def _register_table_dataset_mapping(
+        self, table: powerbi_data_classes.Table, dataset_urn: str
+    ) -> None:
+        dataset = table.dataset
+        if not dataset:
+            return
+        key = self._make_table_cache_key(
+            dataset.workspace_id,
+            dataset.id,
+            table.name,
+        )
+        if key:
+            self._table_to_dataset_urn[key] = dataset_urn
+
+    @staticmethod
+    def _make_table_cache_key(
+        workspace_id: Optional[str],
+        dataset_id: Optional[str],
+        table_name: Optional[str],
+    ) -> Optional[str]:
+        if not workspace_id or not dataset_id or not table_name:
+            return None
+        table_key = canonicalize_identifier(table_name)
+        if not table_key:
+            return None
+        return f"{workspace_id}:{dataset_id}:{table_key}"
+
+    def _dataset_columns_index(self, dataset_urn: str) -> List[str]:
+        return self._dataset_fields.get(dataset_urn, [])
 
     def make_fine_grained_lineage_class(
         self,
@@ -408,6 +464,8 @@ class Mapper:
                     env=self.__config.env,
                 )
             )
+
+            self._register_table_dataset_mapping(table, ds_urn)
 
             logger.debug(f"dataset_urn={ds_urn}")
             # Create datasetProperties mcp
@@ -1181,6 +1239,195 @@ class Mapper:
 
         return list_of_mcps
 
+    @staticmethod
+    def _visual_field_path(visual_name: str, counts: Dict[str, int]) -> str:
+        base = re.sub(r"[^0-9A-Za-z_]", "_", visual_name.strip())
+        base = re.sub(r"_+", "_", base).strip("_") or "visual"
+        count = counts.get(base, 0)
+        counts[base] = count + 1
+        if count:
+            base = f"{base}_{count + 1}"
+        return f"visuals.{base}.data"
+
+    def _collect_dataset_field_mappings(
+        self, report: powerbi_data_classes.Report
+    ) -> Tuple[List[str], Dict[str, Tuple[str, str]]]:
+        dataset_columns: List[str] = []
+        field_lookup: Dict[str, Tuple[str, str]] = {}
+
+        for table in report.dataset.tables or []:
+            dataset = table.dataset or report.dataset
+            key = self._make_table_cache_key(
+                dataset.workspace_id,
+                dataset.id,
+                table.name,
+            )
+            dataset_urn = self._table_to_dataset_urn.get(key) if key else None
+            if not dataset_urn:
+                dataset_urn = self.assets_urn_to_lowercase(
+                    builder.make_dataset_urn_with_platform_instance(
+                        platform=self.__config.platform_name,
+                        name=table.full_name,
+                        platform_instance=self.__config.platform_instance,
+                        env=self.__config.env,
+                    )
+                )
+            if not dataset_urn:
+                continue
+
+            columns = self._dataset_columns_index(dataset_urn)
+            if not columns:
+                column_names = [
+                    column.name
+                    for column in (table.columns or [])
+                    if column and column.name
+                ]
+                measure_names = [
+                    measure.name
+                    for measure in (table.measures or [])
+                    if measure and measure.name
+                ]
+                columns = column_names + measure_names
+                if columns:
+                    self._dataset_fields[dataset_urn] = columns
+                    fallback_lookup: Dict[str, str] = {}
+                    for field_path in columns:
+                        canonical = canonicalize_field_path(field_path)
+                        if canonical:
+                            fallback_lookup.setdefault(canonical, field_path)
+                    if fallback_lookup:
+                        self._dataset_field_lookup[dataset_urn] = fallback_lookup
+            if not columns:
+                continue
+
+            dataset_columns.extend(columns)
+            lookup = self._dataset_field_lookup.get(dataset_urn, {})
+            for canonical, field_path in lookup.items():
+                field_lookup.setdefault(canonical, (dataset_urn, field_path))
+
+        return dataset_columns, field_lookup
+
+    def _build_visual_lineage_entries(
+        self,
+        report_urn: str,
+        visual_upstreams: VisualUpstreamResult,
+        field_lookup: Dict[str, Tuple[str, str]],
+    ) -> List[FineGrainedLineage]:
+        fine_grained_lineages: List[FineGrainedLineage] = []
+        visual_counts: Dict[str, int] = {}
+
+        for visual_name, columns in visual_upstreams.items():
+            upstream_field_urns: List[str] = []
+            for column in columns:
+                lookup_key = canonicalize_field_path(column)
+                dataset_info = field_lookup.get(lookup_key)
+                if not dataset_info and "." in column:
+                    dataset_info = field_lookup.get(
+                        canonicalize_field_path(column.split(".")[-1])
+                    )
+                if not dataset_info:
+                    continue
+                dataset_urn, field_path = dataset_info
+                upstream_field_urns.append(
+                    builder.make_schema_field_urn(dataset_urn, field_path)
+                )
+
+            if not upstream_field_urns:
+                continue
+
+            downstream_field_path = self._visual_field_path(visual_name, visual_counts)
+            downstream_urn = builder.make_schema_field_urn(
+                report_urn, downstream_field_path
+            )
+
+            fine_grained_lineages.append(
+                FineGrainedLineage(
+                    downstreamType=FineGrainedLineageDownstreamType.FIELD,
+                    downstreams=[downstream_urn],
+                    upstreamType=FineGrainedLineageUpstreamType.FIELD_SET,
+                    upstreams=sorted(set(upstream_field_urns)),
+                    transformOperation=visual_upstreams.get_transform_operation(
+                        visual_name
+                    ),
+                )
+            )
+
+        return fine_grained_lineages
+
+    def _visual_lineage_mcps(
+        self,
+        report: powerbi_data_classes.Report,
+        workspace: powerbi_data_classes.Workspace,
+        dataset_urns: Set[str],
+    ) -> List[MetadataChangeProposalWrapper]:
+        dataset_urns = set(dataset_urns)
+
+        if (
+            not self.__config.extract_fine_grained_lineage
+            or not self.__config.pbitools_project_root
+            or report.dataset is None
+        ):
+            return []
+
+        dataset_columns, field_lookup = self._collect_dataset_field_mappings(report)
+        if not dataset_columns:
+            return []
+
+        try:
+            visual_upstreams: VisualUpstreamResult = extract_visual_upstreams(
+                project_root=self.__config.pbitools_project_root,
+                workspace_id=workspace.id,
+                report_id=report.id,
+                dataset_columns=dataset_columns,
+            )
+        except FileNotFoundError as err:
+            logger.debug(
+                "PowerBI fine-grained lineage project not found for report %s: %s",
+                report.id,
+                err,
+            )
+            return []
+        except Exception as err:
+            logger.warning(
+                "Failed to extract fine-grained lineage for report %s: %s",
+                report.id,
+                err,
+                exc_info=logger.isEnabledFor(logging.DEBUG),
+            )
+            return []
+
+        if not visual_upstreams:
+            return []
+
+        report_urn = builder.make_dashboard_urn(
+            platform=self.__config.platform_name,
+            platform_instance=self.__config.platform_instance,
+            name=report.get_urn_part(),
+        )
+
+        fine_grained_lineages = self._build_visual_lineage_entries(
+            report_urn, visual_upstreams, field_lookup
+        )
+        if not fine_grained_lineages:
+            return []
+
+        field_dataset_urns: Set[str] = {info[0] for info in field_lookup.values()}
+        final_dataset_urns = dataset_urns or field_dataset_urns
+        upstream_classes = [
+            UpstreamClass(
+                dataset=self.lineage_urn_to_lowercase(urn),
+                type=DatasetLineageTypeClass.TRANSFORMED,
+            )
+            for urn in final_dataset_urns
+        ]
+
+        upstream_lineage = UpstreamLineageClass(
+            upstreams=upstream_classes or None,
+            fineGrainedLineages=fine_grained_lineages,
+        )
+
+        return [self.new_mcp(entity_urn=report_urn, aspect=upstream_lineage)]
+
     def report_to_datahub_work_units(
         self,
         report: powerbi_data_classes.Report,
@@ -1213,6 +1460,14 @@ class Mapper:
             user_mcps=user_mcps,
             dataset_edges=dataset_edges,
         )
+
+        visual_lineage_mcps = self._visual_lineage_mcps(
+            report=report,
+            workspace=workspace,
+            dataset_urns=dataset_urns,
+        )
+        if visual_lineage_mcps:
+            report_mcps.extend(visual_lineage_mcps)
 
         # Now add MCPs in sequence
         mcps.extend(ds_mcps)

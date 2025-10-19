@@ -495,6 +495,16 @@ class PowerBiDashboardSourceConfig(
         "Works for M-Query where native SQL is used for transformation.",
     )
 
+    extract_fine_grained_lineage: bool = pydantic.Field(
+        default=False,
+        description="Emit column-level lineage from model fields to report visuals and dashboard tiles.",
+    )
+
+    pbitools_project_root: Optional[str] = pydantic.Field(
+        default=None,
+        description="Path to a pbi-tools Project or extracted PBIX directory containing Report/report.json or layout.json.",
+    )
+
     profile_pattern: AllowDenyPattern = pydantic.Field(
         default=AllowDenyPattern.allow_all(),
         description="Regex patterns to filter tables for profiling during ingestion. Note that only tables "
@@ -619,6 +629,22 @@ class PowerBiDashboardSourceConfig(
             add_global_warning(
                 "Please use `extract_dataset_schema: true`, otherwise dataset schema extraction will be skipped."
             )
+        return values
+
+    @root_validator(skip_on_failure=True)
+    def validate_fine_grained_lineage(cls, values: Dict) -> Dict:
+        if values.get("extract_fine_grained_lineage"):
+            if values.get("extract_dataset_schema") is False:
+                raise ValueError(
+                    "extract_dataset_schema must be enabled when extract_fine_grained_lineage is true."
+                )
+
+            if not values.get("pbitools_project_root"):
+                add_global_warning(
+                    "Fine-grained lineage is enabled but `pbitools_project_root` is not provided;"
+                    " no column-level visual lineage will be emitted."
+                )
+
         return values
 
     @root_validator(skip_on_failure=True)
