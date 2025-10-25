@@ -2,6 +2,9 @@ package io.datahubproject.openlineage.converter;
 
 import com.linkedin.common.AuditStamp;
 import com.linkedin.common.DataPlatformInstance;
+import com.linkedin.common.DataTransform;
+import com.linkedin.common.DataTransformArray;
+import com.linkedin.common.DataTransformLogic;
 import com.linkedin.common.Edge;
 import com.linkedin.common.EdgeArray;
 import com.linkedin.common.FabricType;
@@ -43,6 +46,8 @@ import com.linkedin.dataset.Upstream;
 import com.linkedin.dataset.UpstreamArray;
 import com.linkedin.dataset.UpstreamLineage;
 import com.linkedin.domain.Domains;
+import com.linkedin.query.QueryLanguage;
+import com.linkedin.query.QueryStatement;
 import com.linkedin.schema.MapType;
 import com.linkedin.schema.MySqlDDL;
 import com.linkedin.schema.NullType;
@@ -788,6 +793,11 @@ public class OpenLineageToDataHub {
     }
     datahubJob.setJobInfo(dji);
 
+    DataTransformLogic dataTransformLogic = buildDataTransformLogic(job);
+    if (dataTransformLogic != null) {
+      datahubJob.setDataTransformLogic(dataTransformLogic);
+    }
+
     // Process inputs and outputs
     boolean inputsEqualOutputs = checkInputsEqualOutputs(event, job, datahubConf);
 
@@ -821,6 +831,31 @@ public class OpenLineageToDataHub {
     } catch (URISyntaxException e) {
       throw new RuntimeException("Unable to create dataprocess instance urn:" + e);
     }
+  }
+
+  private static DataTransformLogic buildDataTransformLogic(OpenLineage.Job job) {
+    if (job.getFacets() == null || job.getFacets().getSql() == null) {
+      return null;
+    }
+
+    String sqlQuery = job.getFacets().getSql().getQuery();
+    if (sqlQuery == null || sqlQuery.trim().isEmpty()) {
+      return null;
+    }
+
+    DataTransformLogic dataTransformLogic = new DataTransformLogic();
+    DataTransformArray transforms = new DataTransformArray();
+
+    QueryStatement queryStatement = new QueryStatement();
+    queryStatement.setValue(sqlQuery);
+    queryStatement.setLanguage(QueryLanguage.SQL);
+
+    DataTransform dataTransform = new DataTransform();
+    dataTransform.setQueryStatement(queryStatement);
+    transforms.add(dataTransform);
+    dataTransformLogic.setTransforms(transforms);
+
+    return dataTransformLogic;
   }
 
   private static class JobNameResult {
