@@ -4,6 +4,7 @@ import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional, TypeVar, Union
+from urllib import parse
 
 import pydantic
 from pydantic.fields import Field
@@ -11,6 +12,7 @@ from pydantic.fields import Field
 import datahub.metadata.schema_classes as models
 from datahub.configuration.common import ConfigModel, LaxStr
 from datahub.configuration.config_loader import load_config_file
+from datahub.configuration.common import ConfigurationError
 from datahub.emitter.mce_builder import (
     datahub_guid,
     make_group_urn,
@@ -570,9 +572,186 @@ class BusinessGlossaryFileSource(Source):
     def load_glossary_config(
         cls, file_name: Union[str, pathlib.Path]
     ) -> BusinessGlossaryConfig:
+        suffix = cls._determine_suffix(file_name)
+        if suffix in {".rdf", ".owl", ".ttl", ".n3"}:
+            return cls._load_rdf_glossary_config(file_name, suffix)
+
         config = load_config_file(file_name, resolve_env_vars=True)
         glossary_cfg = BusinessGlossaryConfig.parse_obj(config)
         return glossary_cfg
+
+    @staticmethod
+    def _determine_suffix(file_name: Union[str, pathlib.Path]) -> str:
+        if isinstance(file_name, pathlib.Path):
+            return file_name.suffix.lower()
+
+        parsed = parse.urlparse(str(file_name))
+        path = pathlib.Path(parsed.path)
+        return path.suffix.lower()
+
+    @classmethod
+    def _load_rdf_glossary_config(
+        cls, file_name: Union[str, pathlib.Path], suffix: str
+    ) -> BusinessGlossaryConfig:
+        try:
+            from rdflib import Graph
+            from rdflib.namespace import RDF, RDFS, SKOS
+        except ImportError as exc:
+            raise ConfigurationError(
+                "rdflib is required to ingest RDF business glossary files."
+            ) from exc
+
+        graph = Graph()
+        rdf_format = cls._guess_rdf_format(suffix)
+        file_str = str(file_name)
+        parsed = parse.urlparse(file_str)
+
+        if parsed.scheme in {"http", "https"}:
+            import requests
+
+            try:
+                response = requests.get(file_str, timeout=30)
+                response.raise_for_status()
+            except Exception as exc:  # pragma: no cover - requests handles error msg
+                raise ConfigurationError(
+                    f"Cannot read remote RDF glossary file {file_str}: {exc}"
+                ) from exc
+
+            graph.parse(data=response.text, format=rdf_format)
+            glossary_url: Optional[str] = file_str
+        else:
+            path = pathlib.Path(file_name)
+            if not path.is_file():
+                raise ConfigurationError(
+                    f"Cannot open RDF glossary file {path.resolve()}"
+                )
+            graph.parse(data=path.read_text(), format=rdf_format)
+            glossary_url = None
+
+        glossary_label = cls._extract_scheme_label(graph, RDF, SKOS, RDFS)
+
+        term_entries = cls._extract_concepts(graph, RDF, SKOS, RDFS)
+
+        cls._populate_relationships(graph, term_entries, SKOS)
+
+        glossary_cfg = BusinessGlossaryConfig(
+            version="1",
+            source=glossary_label or "RDF Import",
+            owners=Owners(),
+            url=glossary_url,
+            terms=sorted(term_entries.values(), key=lambda term: term.name.lower()),
+        )
+
+        return glossary_cfg
+
+    @staticmethod
+    def _guess_rdf_format(suffix: str) -> Optional[str]:
+        if suffix in {".ttl"}:
+            return "turtle"
+        if suffix in {".rdf", ".owl"}:
+            return "xml"
+        if suffix == ".n3":
+            return "n3"
+        return None
+
+    @classmethod
+    def _extract_scheme_label(
+        cls,
+        graph,
+        rdf,
+        skos,
+        rdfs,
+    ) -> Optional[str]:
+        scheme = next(graph.subjects(rdf.type, skos.ConceptScheme), None)
+        if scheme is None:
+            return None
+
+        label = cls._first_literal(graph, scheme, skos.prefLabel)
+        if label is None:
+            label = cls._first_literal(graph, scheme, rdfs.label)
+
+        return label
+
+    @classmethod
+    def _extract_concepts(
+        cls,
+        graph,
+        rdf,
+        skos,
+        rdfs,
+    ) -> Dict[Any, GlossaryTermConfig]:
+        term_entries: Dict[Any, GlossaryTermConfig] = {}
+        for concept in graph.subjects(rdf.type, skos.Concept):
+            label = cls._first_literal(graph, concept, skos.prefLabel)
+            if label is None:
+                label = cls._first_literal(graph, concept, rdfs.label)
+
+            name = label or cls._infer_name_from_identifier(concept)
+            description = cls._first_literal(graph, concept, skos.definition)
+            if description is None:
+                description = cls._first_literal(graph, concept, rdfs.comment)
+
+            if not description:
+                description = f"Concept imported from RDF identifier {concept}"
+
+            source_url = cls._string_if_url(concept)
+
+            term_entries[concept] = GlossaryTermConfig(
+                name=name,
+                description=description,
+                source_url=source_url,
+            )
+
+        return term_entries
+
+    @classmethod
+    def _populate_relationships(cls, graph, term_entries, skos) -> None:
+        for concept, term in term_entries.items():
+            inherits = {
+                term_entries[broader].name
+                for broader in graph.objects(concept, skos.broader)
+                if broader in term_entries
+            }
+            if inherits:
+                term.inherits = sorted(inherits)
+
+            related = {
+                term_entries[related].name
+                for related in graph.objects(concept, skos.related)
+                if related in term_entries
+            }
+            if related:
+                term.related_terms = sorted(related)
+
+    @staticmethod
+    def _first_literal(graph, subject, predicate) -> Optional[str]:
+        from rdflib.term import Literal
+
+        for obj in graph.objects(subject, predicate):
+            if isinstance(obj, Literal):
+                return str(obj)
+            return str(obj)
+        return None
+
+    @staticmethod
+    def _infer_name_from_identifier(identifier) -> str:
+        identifier_str = str(identifier)
+        parsed = parse.urlparse(identifier_str)
+        if parsed.path:
+            name_candidate = pathlib.Path(parsed.path).name
+            if name_candidate:
+                return name_candidate
+        if parsed.fragment:
+            return parsed.fragment
+        return identifier_str
+
+    @staticmethod
+    def _string_if_url(identifier) -> Optional[str]:
+        identifier_str = str(identifier)
+        parsed = parse.urlparse(identifier_str)
+        if parsed.scheme in {"http", "https"}:
+            return identifier_str
+        return None
 
     def get_workunits_internal(
         self,

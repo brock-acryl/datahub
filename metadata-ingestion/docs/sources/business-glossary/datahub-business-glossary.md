@@ -1,6 +1,11 @@
 ### Business Glossary File Format
 
-The business glossary source file should be a .yml file with the following top-level keys:
+The business glossary source supports two input formats:
+
+- **YAML** (`.yml` / `.yaml`): The original hierarchical format described below.
+- **RDF / Turtle** (`.rdf`, `.owl`, `.ttl`, `.n3`): SKOS-based glossaries that are converted into DataHub terms during ingestion.
+
+When using YAML, the file should include the following top-level keys:
 
 **Glossary**: the top level keys of the business glossary file
 
@@ -68,6 +73,18 @@ Example **GlossaryTerm**:
       label: Wiki link
   domain: "urn:li:domain:Logistics" # (optional) domain name or domain urn
 ```
+
+### Working with RDF files
+
+When providing an RDF glossary, DataHub relies on the [SKOS vocabulary](https://www.w3.org/TR/skos-reference/) to interpret the concepts.
+
+- Each `skos:Concept` becomes a DataHub glossary term.
+- `skos:prefLabel` or `rdfs:label` is used as the term name.
+- `skos:definition` or `rdfs:comment` provides the term description.
+- `skos:broader` relationships are mapped to `inherits` relationships between terms.
+- Term URNs are generated automatically based on their labels, and `skos:ConceptScheme` metadata is used to populate the glossary source information.
+
+You can provide the RDF data either as a local file path or an HTTP(S) URL. Remote files are fetched at ingestion time.
 
 ## ID Management and URL Generation
 
