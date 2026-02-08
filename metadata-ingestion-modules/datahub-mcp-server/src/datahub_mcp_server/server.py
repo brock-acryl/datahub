@@ -357,6 +357,172 @@ class DataHubMCPServer:
                         "required": ["deprecated"],
                     },
                 ),
+                Tool(
+                    name="bulk_add_tags",
+                    description=(
+                        "Add tags to multiple entities in bulk. "
+                        "Returns success/failure counts and details of any failures."
+                    ),
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "urns": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of entity URNs",
+                            },
+                            "tag_names": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of tag names to add to all entities",
+                            },
+                        },
+                        "required": ["urns", "tag_names"],
+                    },
+                ),
+                Tool(
+                    name="bulk_remove_tags",
+                    description="Remove tags from multiple entities in bulk.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "urns": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of entity URNs",
+                            },
+                            "tag_names": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of tag names to remove from all entities",
+                            },
+                        },
+                        "required": ["urns", "tag_names"],
+                    },
+                ),
+                Tool(
+                    name="bulk_add_glossary_terms",
+                    description="Add glossary terms to multiple entities in bulk.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "urns": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of entity URNs",
+                            },
+                            "term_names": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of glossary term names to add",
+                            },
+                        },
+                        "required": ["urns", "term_names"],
+                    },
+                ),
+                Tool(
+                    name="bulk_remove_glossary_terms",
+                    description="Remove glossary terms from multiple entities in bulk.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "urns": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of entity URNs",
+                            },
+                            "term_names": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of glossary term names to remove",
+                            },
+                        },
+                        "required": ["urns", "term_names"],
+                    },
+                ),
+                Tool(
+                    name="bulk_add_owners",
+                    description="Add owners to multiple entities in bulk.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "urns": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of entity URNs",
+                            },
+                            "owner_names": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of owner usernames to add",
+                            },
+                            "owner_type": {
+                                "type": "string",
+                                "description": "Owner type",
+                                "enum": ["TECHNICAL_OWNER", "BUSINESS_OWNER", "DATA_STEWARD", "NONE"],
+                                "default": "NONE",
+                            },
+                        },
+                        "required": ["urns", "owner_names"],
+                    },
+                ),
+                Tool(
+                    name="bulk_remove_owners",
+                    description="Remove owners from multiple entities in bulk.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "urns": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of entity URNs",
+                            },
+                            "owner_names": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of owner usernames to remove",
+                            },
+                        },
+                        "required": ["urns", "owner_names"],
+                    },
+                ),
+                Tool(
+                    name="bulk_set_domain",
+                    description="Set the domain for multiple entities in bulk.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "urns": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of entity URNs",
+                            },
+                            "domain_name": {
+                                "type": "string",
+                                "description": "Domain name to set for all entities",
+                            },
+                        },
+                        "required": ["urns", "domain_name"],
+                    },
+                ),
+                Tool(
+                    name="bulk_update_descriptions",
+                    description=(
+                        "Update descriptions for multiple entities in bulk. "
+                        "Provide a mapping of URNs to their new descriptions."
+                    ),
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "updates": {
+                                "type": "object",
+                                "description": "Dictionary mapping URNs to new descriptions",
+                                "additionalProperties": {"type": "string"},
+                            },
+                        },
+                        "required": ["updates"],
+                    },
+                ),
             ]
 
         @self.server.call_tool()
@@ -389,6 +555,22 @@ class DataHubMCPServer:
                     return await self._handle_unset_domain(arguments)
                 elif name == "update_deprecation":
                     return await self._handle_update_deprecation(arguments)
+                elif name == "bulk_add_tags":
+                    return await self._handle_bulk_add_tags(arguments)
+                elif name == "bulk_remove_tags":
+                    return await self._handle_bulk_remove_tags(arguments)
+                elif name == "bulk_add_glossary_terms":
+                    return await self._handle_bulk_add_terms(arguments)
+                elif name == "bulk_remove_glossary_terms":
+                    return await self._handle_bulk_remove_terms(arguments)
+                elif name == "bulk_add_owners":
+                    return await self._handle_bulk_add_owners(arguments)
+                elif name == "bulk_remove_owners":
+                    return await self._handle_bulk_remove_owners(arguments)
+                elif name == "bulk_set_domain":
+                    return await self._handle_bulk_set_domain(arguments)
+                elif name == "bulk_update_descriptions":
+                    return await self._handle_bulk_update_descriptions(arguments)
                 else:
                     return [{"type": "text", "text": f"Unknown tool: {name}"}]
             except Exception as e:
@@ -559,6 +741,85 @@ class DataHubMCPServer:
 
         status = "deprecated" if deprecated else "not deprecated"
         return [{"type": "text", "text": f"Successfully updated deprecation status to {status}"}]
+
+    async def _handle_bulk_add_tags(self, arguments: dict[str, Any]) -> list[dict[str, Any]]:
+        """Handle bulk_add_tags tool call."""
+        urns = arguments["urns"]
+        tag_names = arguments["tag_names"]
+
+        identifiers = [EntityIdentifier(urn=urn) for urn in urns]
+        result = await self.tools.bulk_add_tags(identifiers, tag_names)
+
+        return [{"type": "text", "text": result.model_dump_json(indent=2)}]
+
+    async def _handle_bulk_remove_tags(self, arguments: dict[str, Any]) -> list[dict[str, Any]]:
+        """Handle bulk_remove_tags tool call."""
+        urns = arguments["urns"]
+        tag_names = arguments["tag_names"]
+
+        identifiers = [EntityIdentifier(urn=urn) for urn in urns]
+        result = await self.tools.bulk_remove_tags(identifiers, tag_names)
+
+        return [{"type": "text", "text": result.model_dump_json(indent=2)}]
+
+    async def _handle_bulk_add_terms(self, arguments: dict[str, Any]) -> list[dict[str, Any]]:
+        """Handle bulk_add_glossary_terms tool call."""
+        urns = arguments["urns"]
+        term_names = arguments["term_names"]
+
+        identifiers = [EntityIdentifier(urn=urn) for urn in urns]
+        result = await self.tools.bulk_add_terms(identifiers, term_names)
+
+        return [{"type": "text", "text": result.model_dump_json(indent=2)}]
+
+    async def _handle_bulk_remove_terms(self, arguments: dict[str, Any]) -> list[dict[str, Any]]:
+        """Handle bulk_remove_glossary_terms tool call."""
+        urns = arguments["urns"]
+        term_names = arguments["term_names"]
+
+        identifiers = [EntityIdentifier(urn=urn) for urn in urns]
+        result = await self.tools.bulk_remove_terms(identifiers, term_names)
+
+        return [{"type": "text", "text": result.model_dump_json(indent=2)}]
+
+    async def _handle_bulk_add_owners(self, arguments: dict[str, Any]) -> list[dict[str, Any]]:
+        """Handle bulk_add_owners tool call."""
+        urns = arguments["urns"]
+        owner_names = arguments["owner_names"]
+        owner_type = arguments.get("owner_type", "NONE")
+
+        identifiers = [EntityIdentifier(urn=urn) for urn in urns]
+        result = await self.tools.bulk_add_owners(identifiers, owner_names, owner_type)
+
+        return [{"type": "text", "text": result.model_dump_json(indent=2)}]
+
+    async def _handle_bulk_remove_owners(self, arguments: dict[str, Any]) -> list[dict[str, Any]]:
+        """Handle bulk_remove_owners tool call."""
+        urns = arguments["urns"]
+        owner_names = arguments["owner_names"]
+
+        identifiers = [EntityIdentifier(urn=urn) for urn in urns]
+        result = await self.tools.bulk_remove_owners(identifiers, owner_names)
+
+        return [{"type": "text", "text": result.model_dump_json(indent=2)}]
+
+    async def _handle_bulk_set_domain(self, arguments: dict[str, Any]) -> list[dict[str, Any]]:
+        """Handle bulk_set_domain tool call."""
+        urns = arguments["urns"]
+        domain_name = arguments["domain_name"]
+
+        identifiers = [EntityIdentifier(urn=urn) for urn in urns]
+        result = await self.tools.bulk_set_domain(identifiers, domain_name)
+
+        return [{"type": "text", "text": result.model_dump_json(indent=2)}]
+
+    async def _handle_bulk_update_descriptions(self, arguments: dict[str, Any]) -> list[dict[str, Any]]:
+        """Handle bulk_update_descriptions tool call."""
+        updates = arguments["updates"]
+
+        result = await self.tools.bulk_update_descriptions(updates)
+
+        return [{"type": "text", "text": result.model_dump_json(indent=2)}]
 
     async def cleanup(self) -> None:
         """Cleanup server resources."""

@@ -4,6 +4,7 @@ from typing import Any, Optional
 
 from datahub_mcp_server.clients import GraphQLClient, OpenAPIClient
 from datahub_mcp_server.models import (
+    BulkOperationResult,
     EntityFull,
     EntityIdentifier,
     LineageResponse,
@@ -337,6 +338,283 @@ class DataHubTools:
 
         await self.graphql_client.update_deprecation(urn, deprecated, note, decommission_time)
         return True
+
+    async def bulk_add_tags(
+        self,
+        identifiers: list[EntityIdentifier],
+        tag_names: list[str],
+    ) -> BulkOperationResult:
+        """Add tags to multiple entities using OpenAPI batch operations.
+
+        Args:
+            identifiers: List of entity identifiers
+            tag_names: List of tag names to add to all entities
+
+        Returns:
+            BulkOperationResult with success/failure counts
+        """
+        tag_urns = [f"urn:li:tag:{tag}" for tag in tag_names]
+        urns = [self.urn_resolver.resolve(identifier) for identifier in identifiers]
+
+        success_count = 0
+        failure_count = 0
+        failures = []
+
+        for urn in urns:
+            try:
+                await self.graphql_client.add_tags(urn, tag_urns)
+                success_count += 1
+            except Exception as e:
+                failure_count += 1
+                failures.append({"urn": urn, "error": str(e)})
+
+        return BulkOperationResult(
+            success_count=success_count,
+            failure_count=failure_count,
+            failures=failures,
+        )
+
+    async def bulk_remove_tags(
+        self,
+        identifiers: list[EntityIdentifier],
+        tag_names: list[str],
+    ) -> BulkOperationResult:
+        """Remove tags from multiple entities.
+
+        Args:
+            identifiers: List of entity identifiers
+            tag_names: List of tag names to remove from all entities
+
+        Returns:
+            BulkOperationResult with success/failure counts
+        """
+        tag_urns = [f"urn:li:tag:{tag}" for tag in tag_names]
+        urns = [self.urn_resolver.resolve(identifier) for identifier in identifiers]
+
+        success_count = 0
+        failure_count = 0
+        failures = []
+
+        for urn in urns:
+            try:
+                await self.graphql_client.remove_tags(urn, tag_urns)
+                success_count += 1
+            except Exception as e:
+                failure_count += 1
+                failures.append({"urn": urn, "error": str(e)})
+
+        return BulkOperationResult(
+            success_count=success_count,
+            failure_count=failure_count,
+            failures=failures,
+        )
+
+    async def bulk_add_terms(
+        self,
+        identifiers: list[EntityIdentifier],
+        term_names: list[str],
+    ) -> BulkOperationResult:
+        """Add glossary terms to multiple entities.
+
+        Args:
+            identifiers: List of entity identifiers
+            term_names: List of glossary term names to add
+
+        Returns:
+            BulkOperationResult with success/failure counts
+        """
+        term_urns = [f"urn:li:glossaryTerm:{term}" for term in term_names]
+        urns = [self.urn_resolver.resolve(identifier) for identifier in identifiers]
+
+        success_count = 0
+        failure_count = 0
+        failures = []
+
+        for urn in urns:
+            try:
+                await self.graphql_client.add_terms(urn, term_urns)
+                success_count += 1
+            except Exception as e:
+                failure_count += 1
+                failures.append({"urn": urn, "error": str(e)})
+
+        return BulkOperationResult(
+            success_count=success_count,
+            failure_count=failure_count,
+            failures=failures,
+        )
+
+    async def bulk_remove_terms(
+        self,
+        identifiers: list[EntityIdentifier],
+        term_names: list[str],
+    ) -> BulkOperationResult:
+        """Remove glossary terms from multiple entities.
+
+        Args:
+            identifiers: List of entity identifiers
+            term_names: List of glossary term names to remove
+
+        Returns:
+            BulkOperationResult with success/failure counts
+        """
+        term_urns = [f"urn:li:glossaryTerm:{term}" for term in term_names]
+        urns = [self.urn_resolver.resolve(identifier) for identifier in identifiers]
+
+        success_count = 0
+        failure_count = 0
+        failures = []
+
+        for urn in urns:
+            try:
+                await self.graphql_client.remove_terms(urn, term_urns)
+                success_count += 1
+            except Exception as e:
+                failure_count += 1
+                failures.append({"urn": urn, "error": str(e)})
+
+        return BulkOperationResult(
+            success_count=success_count,
+            failure_count=failure_count,
+            failures=failures,
+        )
+
+    async def bulk_add_owners(
+        self,
+        identifiers: list[EntityIdentifier],
+        owner_names: list[str],
+        owner_type: str = "NONE",
+    ) -> BulkOperationResult:
+        """Add owners to multiple entities.
+
+        Args:
+            identifiers: List of entity identifiers
+            owner_names: List of owner usernames to add
+            owner_type: Owner type (TECHNICAL_OWNER, BUSINESS_OWNER, DATA_STEWARD, NONE)
+
+        Returns:
+            BulkOperationResult with success/failure counts
+        """
+        owner_urns = [f"urn:li:corpuser:{owner}" for owner in owner_names]
+        urns = [self.urn_resolver.resolve(identifier) for identifier in identifiers]
+
+        success_count = 0
+        failure_count = 0
+        failures = []
+
+        for urn in urns:
+            try:
+                await self.graphql_client.add_owners(urn, owner_urns, owner_type)
+                success_count += 1
+            except Exception as e:
+                failure_count += 1
+                failures.append({"urn": urn, "error": str(e)})
+
+        return BulkOperationResult(
+            success_count=success_count,
+            failure_count=failure_count,
+            failures=failures,
+        )
+
+    async def bulk_remove_owners(
+        self,
+        identifiers: list[EntityIdentifier],
+        owner_names: list[str],
+    ) -> BulkOperationResult:
+        """Remove owners from multiple entities.
+
+        Args:
+            identifiers: List of entity identifiers
+            owner_names: List of owner usernames to remove
+
+        Returns:
+            BulkOperationResult with success/failure counts
+        """
+        owner_urns = [f"urn:li:corpuser:{owner}" for owner in owner_names]
+        urns = [self.urn_resolver.resolve(identifier) for identifier in identifiers]
+
+        success_count = 0
+        failure_count = 0
+        failures = []
+
+        for urn in urns:
+            try:
+                await self.graphql_client.remove_owners(urn, owner_urns)
+                success_count += 1
+            except Exception as e:
+                failure_count += 1
+                failures.append({"urn": urn, "error": str(e)})
+
+        return BulkOperationResult(
+            success_count=success_count,
+            failure_count=failure_count,
+            failures=failures,
+        )
+
+    async def bulk_set_domain(
+        self,
+        identifiers: list[EntityIdentifier],
+        domain_name: str,
+    ) -> BulkOperationResult:
+        """Set the domain for multiple entities.
+
+        Args:
+            identifiers: List of entity identifiers
+            domain_name: Domain name to set
+
+        Returns:
+            BulkOperationResult with success/failure counts
+        """
+        domain_urn = f"urn:li:domain:{domain_name}"
+        urns = [self.urn_resolver.resolve(identifier) for identifier in identifiers]
+
+        success_count = 0
+        failure_count = 0
+        failures = []
+
+        for urn in urns:
+            try:
+                await self.graphql_client.set_domain(urn, domain_urn)
+                success_count += 1
+            except Exception as e:
+                failure_count += 1
+                failures.append({"urn": urn, "error": str(e)})
+
+        return BulkOperationResult(
+            success_count=success_count,
+            failure_count=failure_count,
+            failures=failures,
+        )
+
+    async def bulk_update_descriptions(
+        self,
+        updates: dict[str, str],
+    ) -> BulkOperationResult:
+        """Update descriptions for multiple entities.
+
+        Args:
+            updates: Dictionary mapping URNs to new descriptions
+
+        Returns:
+            BulkOperationResult with success/failure counts
+        """
+        success_count = 0
+        failure_count = 0
+        failures = []
+
+        for urn, description in updates.items():
+            try:
+                await self.graphql_client.update_description(urn, description)
+                success_count += 1
+            except Exception as e:
+                failure_count += 1
+                failures.append({"urn": urn, "error": str(e)})
+
+        return BulkOperationResult(
+            success_count=success_count,
+            failure_count=failure_count,
+            failures=failures,
+        )
 
     def _parse_search_response(self, response: dict[str, Any]) -> SearchResponse:
         """Parse GraphQL search response into SearchResponse model."""

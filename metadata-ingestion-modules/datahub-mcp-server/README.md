@@ -31,12 +31,15 @@ The DataHub MCP Server provides a standardized interface for AI assistants to in
 - **Deprecation**: Update deprecation status with optional notes and decommission time
 - GraphQL-based mutations for UI-parity operations
 
-### Phase 3: Bulk Operations (Planned)
+### Phase 3: Bulk Operations ✅
 
-- Bulk tag and term management
-- Bulk ownership updates
-- Conditional writes with version checking
-- Async operation tracking
+- **Bulk Tags**: Add/remove tags across multiple entities
+- **Bulk Glossary Terms**: Add/remove glossary terms across multiple entities
+- **Bulk Ownership**: Add/remove owners across multiple entities with owner types
+- **Bulk Domains**: Set domains for multiple entities
+- **Bulk Descriptions**: Update descriptions for multiple entities
+- Detailed success/failure reporting with error details
+- High-throughput batch processing
 
 ## Installation
 
@@ -84,6 +87,19 @@ datahub-mcp-server --datahub-url http://localhost:8080 --token <your-token>
 - `set_domain` - Set the domain for an entity (domain must exist)
 - `unset_domain` - Remove domain from an entity
 - `update_deprecation` - Mark entity as deprecated/not deprecated with optional note
+
+#### Bulk Operations (Phase 3)
+
+- `bulk_add_tags` - Add tags to multiple entities
+- `bulk_remove_tags` - Remove tags from multiple entities
+- `bulk_add_glossary_terms` - Add glossary terms to multiple entities
+- `bulk_remove_glossary_terms` - Remove glossary terms from multiple entities
+- `bulk_add_owners` - Add owners to multiple entities
+- `bulk_remove_owners` - Remove owners from multiple entities
+- `bulk_set_domain` - Set domain for multiple entities
+- `bulk_update_descriptions` - Update descriptions for multiple entities
+
+All bulk operations return detailed results with success/failure counts and error details.
 
 ## Architecture
 
