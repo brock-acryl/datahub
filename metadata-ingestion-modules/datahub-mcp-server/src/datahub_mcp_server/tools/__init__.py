@@ -137,6 +137,207 @@ class DataHubTools:
         """
         raise NotImplementedError("Lineage retrieval coming in next phase")
 
+    async def add_tags(
+        self,
+        identifier: EntityIdentifier,
+        tag_names: list[str],
+    ) -> bool:
+        """Add tags to an entity.
+
+        Args:
+            identifier: Entity identifier
+            tag_names: List of tag names (not URNs) to add
+
+        Returns:
+            True if successful
+        """
+        urn = self.urn_resolver.resolve(identifier)
+        tag_urns = [f"urn:li:tag:{tag}" for tag in tag_names]
+
+        await self.graphql_client.add_tags(urn, tag_urns)
+        return True
+
+    async def remove_tags(
+        self,
+        identifier: EntityIdentifier,
+        tag_names: list[str],
+    ) -> bool:
+        """Remove tags from an entity.
+
+        Args:
+            identifier: Entity identifier
+            tag_names: List of tag names (not URNs) to remove
+
+        Returns:
+            True if successful
+        """
+        urn = self.urn_resolver.resolve(identifier)
+        tag_urns = [f"urn:li:tag:{tag}" for tag in tag_names]
+
+        await self.graphql_client.remove_tags(urn, tag_urns)
+        return True
+
+    async def add_terms(
+        self,
+        identifier: EntityIdentifier,
+        term_names: list[str],
+    ) -> bool:
+        """Add glossary terms to an entity.
+
+        Args:
+            identifier: Entity identifier
+            term_names: List of term names (not URNs) to add
+
+        Returns:
+            True if successful
+        """
+        urn = self.urn_resolver.resolve(identifier)
+        term_urns = [f"urn:li:glossaryTerm:{term}" for term in term_names]
+
+        await self.graphql_client.add_terms(urn, term_urns)
+        return True
+
+    async def remove_terms(
+        self,
+        identifier: EntityIdentifier,
+        term_names: list[str],
+    ) -> bool:
+        """Remove glossary terms from an entity.
+
+        Args:
+            identifier: Entity identifier
+            term_names: List of term names (not URNs) to remove
+
+        Returns:
+            True if successful
+        """
+        urn = self.urn_resolver.resolve(identifier)
+        term_urns = [f"urn:li:glossaryTerm:{term}" for term in term_names]
+
+        await self.graphql_client.remove_terms(urn, term_urns)
+        return True
+
+    async def add_owners(
+        self,
+        identifier: EntityIdentifier,
+        owner_names: list[str],
+        owner_type: str = "NONE",
+    ) -> bool:
+        """Add owners to an entity.
+
+        Args:
+            identifier: Entity identifier
+            owner_names: List of owner usernames
+            owner_type: Owner type (TECHNICAL_OWNER, BUSINESS_OWNER, DATA_STEWARD, NONE)
+
+        Returns:
+            True if successful
+        """
+        urn = self.urn_resolver.resolve(identifier)
+        owner_urns = [f"urn:li:corpuser:{owner}" for owner in owner_names]
+
+        await self.graphql_client.add_owners(urn, owner_urns, owner_type)
+        return True
+
+    async def remove_owners(
+        self,
+        identifier: EntityIdentifier,
+        owner_names: list[str],
+    ) -> bool:
+        """Remove owners from an entity.
+
+        Args:
+            identifier: Entity identifier
+            owner_names: List of owner usernames to remove
+
+        Returns:
+            True if successful
+        """
+        urn = self.urn_resolver.resolve(identifier)
+        owner_urns = [f"urn:li:corpuser:{owner}" for owner in owner_names]
+
+        await self.graphql_client.remove_owners(urn, owner_urns)
+        return True
+
+    async def update_description(
+        self,
+        identifier: EntityIdentifier,
+        description: str,
+    ) -> bool:
+        """Update entity description.
+
+        Args:
+            identifier: Entity identifier
+            description: New description text
+
+        Returns:
+            True if successful
+        """
+        urn = self.urn_resolver.resolve(identifier)
+
+        await self.graphql_client.update_description(urn, description)
+        return True
+
+    async def set_domain(
+        self,
+        identifier: EntityIdentifier,
+        domain_name: str,
+    ) -> bool:
+        """Set the domain for an entity.
+
+        Args:
+            identifier: Entity identifier
+            domain_name: Domain name (not URN)
+
+        Returns:
+            True if successful
+        """
+        urn = self.urn_resolver.resolve(identifier)
+        domain_urn = f"urn:li:domain:{domain_name}"
+
+        await self.graphql_client.set_domain(urn, domain_urn)
+        return True
+
+    async def unset_domain(
+        self,
+        identifier: EntityIdentifier,
+    ) -> bool:
+        """Unset the domain for an entity.
+
+        Args:
+            identifier: Entity identifier
+
+        Returns:
+            True if successful
+        """
+        urn = self.urn_resolver.resolve(identifier)
+
+        await self.graphql_client.unset_domain(urn)
+        return True
+
+    async def update_deprecation(
+        self,
+        identifier: EntityIdentifier,
+        deprecated: bool,
+        note: Optional[str] = None,
+        decommission_time: Optional[int] = None,
+    ) -> bool:
+        """Update deprecation status for an entity.
+
+        Args:
+            identifier: Entity identifier
+            deprecated: Whether the entity is deprecated
+            note: Optional deprecation note
+            decommission_time: Optional decommission timestamp (milliseconds)
+
+        Returns:
+            True if successful
+        """
+        urn = self.urn_resolver.resolve(identifier)
+
+        await self.graphql_client.update_deprecation(urn, deprecated, note, decommission_time)
+        return True
+
     def _parse_search_response(self, response: dict[str, Any]) -> SearchResponse:
         """Parse GraphQL search response into SearchResponse model."""
         from datahub_mcp_server.models import SearchResult

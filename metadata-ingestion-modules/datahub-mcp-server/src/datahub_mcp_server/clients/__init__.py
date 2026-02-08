@@ -278,5 +278,305 @@ class GraphQLClient(BaseClient):
 
         return await self.execute(graphql_query, variables)
 
+    async def add_tags(
+        self,
+        urn: str,
+        tag_urns: list[str],
+    ) -> dict[str, Any]:
+        """Add tags to an entity.
+
+        Args:
+            urn: Entity URN
+            tag_urns: List of tag URNs to add
+
+        Returns:
+            Mutation response
+        """
+        mutation = """
+        mutation addTags($input: BatchAddTagsInput!) {
+            addTags(input: $input)
+        }
+        """
+
+        variables = {
+            "input": {
+                "tagUrns": tag_urns,
+                "resources": [{"resourceUrn": urn}],
+            }
+        }
+
+        return await self.execute(mutation, variables)
+
+    async def remove_tags(
+        self,
+        urn: str,
+        tag_urns: list[str],
+    ) -> dict[str, Any]:
+        """Remove tags from an entity.
+
+        Args:
+            urn: Entity URN
+            tag_urns: List of tag URNs to remove
+
+        Returns:
+            Mutation response
+        """
+        mutation = """
+        mutation removeTags($input: BatchRemoveTagsInput!) {
+            removeTags(input: $input)
+        }
+        """
+
+        variables = {
+            "input": {
+                "tagUrns": tag_urns,
+                "resources": [{"resourceUrn": urn}],
+            }
+        }
+
+        return await self.execute(mutation, variables)
+
+    async def add_terms(
+        self,
+        urn: str,
+        term_urns: list[str],
+    ) -> dict[str, Any]:
+        """Add glossary terms to an entity.
+
+        Args:
+            urn: Entity URN
+            term_urns: List of glossary term URNs to add
+
+        Returns:
+            Mutation response
+        """
+        mutation = """
+        mutation addTerms($input: BatchAddTermsInput!) {
+            addTerms(input: $input)
+        }
+        """
+
+        variables = {
+            "input": {
+                "termUrns": term_urns,
+                "resources": [{"resourceUrn": urn}],
+            }
+        }
+
+        return await self.execute(mutation, variables)
+
+    async def remove_terms(
+        self,
+        urn: str,
+        term_urns: list[str],
+    ) -> dict[str, Any]:
+        """Remove glossary terms from an entity.
+
+        Args:
+            urn: Entity URN
+            term_urns: List of glossary term URNs to remove
+
+        Returns:
+            Mutation response
+        """
+        mutation = """
+        mutation removeTerms($input: BatchRemoveTermsInput!) {
+            removeTerms(input: $input)
+        }
+        """
+
+        variables = {
+            "input": {
+                "termUrns": term_urns,
+                "resources": [{"resourceUrn": urn}],
+            }
+        }
+
+        return await self.execute(mutation, variables)
+
+    async def add_owners(
+        self,
+        urn: str,
+        owner_urns: list[str],
+        owner_type: str = "NONE",
+    ) -> dict[str, Any]:
+        """Add owners to an entity.
+
+        Args:
+            urn: Entity URN
+            owner_urns: List of owner URNs (corpuser or corpGroup)
+            owner_type: Owner type (TECHNICAL_OWNER, BUSINESS_OWNER, DATA_STEWARD, NONE)
+
+        Returns:
+            Mutation response
+        """
+        mutation = """
+        mutation addOwners($input: AddOwnersInput!) {
+            addOwners(input: $input)
+        }
+        """
+
+        owners = [{"ownerUrn": owner_urn, "type": owner_type} for owner_urn in owner_urns]
+
+        variables = {
+            "input": {
+                "owners": owners,
+                "resourceUrn": urn,
+            }
+        }
+
+        return await self.execute(mutation, variables)
+
+    async def remove_owners(
+        self,
+        urn: str,
+        owner_urns: list[str],
+    ) -> dict[str, Any]:
+        """Remove owners from an entity.
+
+        Args:
+            urn: Entity URN
+            owner_urns: List of owner URNs to remove
+
+        Returns:
+            Mutation response
+        """
+        mutation = """
+        mutation removeOwners($input: RemoveOwnersInput!) {
+            removeOwners(input: $input)
+        }
+        """
+
+        variables = {
+            "input": {
+                "ownerUrns": owner_urns,
+                "resourceUrn": urn,
+            }
+        }
+
+        return await self.execute(mutation, variables)
+
+    async def update_description(
+        self,
+        urn: str,
+        description: str,
+    ) -> dict[str, Any]:
+        """Update entity description.
+
+        Args:
+            urn: Entity URN
+            description: New description text
+
+        Returns:
+            Mutation response
+        """
+        mutation = """
+        mutation updateDescription($input: DescriptionUpdateInput!) {
+            updateDescription(input: $input)
+        }
+        """
+
+        variables = {
+            "input": {
+                "description": description,
+                "resourceUrn": urn,
+            }
+        }
+
+        return await self.execute(mutation, variables)
+
+    async def set_domain(
+        self,
+        urn: str,
+        domain_urn: str,
+    ) -> dict[str, Any]:
+        """Set the domain for an entity.
+
+        Args:
+            urn: Entity URN
+            domain_urn: Domain URN
+
+        Returns:
+            Mutation response
+        """
+        mutation = """
+        mutation setDomain($input: SetDomainInput!) {
+            setDomain(input: $input)
+        }
+        """
+
+        variables = {
+            "input": {
+                "domainUrn": domain_urn,
+                "resourceUrn": urn,
+            }
+        }
+
+        return await self.execute(mutation, variables)
+
+    async def unset_domain(
+        self,
+        urn: str,
+    ) -> dict[str, Any]:
+        """Unset the domain for an entity.
+
+        Args:
+            urn: Entity URN
+
+        Returns:
+            Mutation response
+        """
+        mutation = """
+        mutation unsetDomain($input: UnsetDomainInput!) {
+            unsetDomain(input: $input)
+        }
+        """
+
+        variables = {
+            "input": {
+                "resourceUrn": urn,
+            }
+        }
+
+        return await self.execute(mutation, variables)
+
+    async def update_deprecation(
+        self,
+        urn: str,
+        deprecated: bool,
+        note: Optional[str] = None,
+        decommission_time: Optional[int] = None,
+    ) -> dict[str, Any]:
+        """Update deprecation status for an entity.
+
+        Args:
+            urn: Entity URN
+            deprecated: Whether the entity is deprecated
+            note: Optional deprecation note
+            decommission_time: Optional decommission timestamp (milliseconds)
+
+        Returns:
+            Mutation response
+        """
+        mutation = """
+        mutation updateDeprecation($input: UpdateDeprecationInput!) {
+            updateDeprecation(input: $input)
+        }
+        """
+
+        variables = {
+            "input": {
+                "urn": urn,
+                "deprecated": deprecated,
+            }
+        }
+
+        if note:
+            variables["input"]["note"] = note
+        if decommission_time:
+            variables["input"]["decommissionTime"] = decommission_time
+
+        return await self.execute(mutation, variables)
+
 
 __all__ = ["BaseClient", "OpenAPIClient", "GraphQLClient"]

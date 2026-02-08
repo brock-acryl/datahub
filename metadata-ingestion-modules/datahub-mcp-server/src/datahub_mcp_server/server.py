@@ -149,6 +149,214 @@ class DataHubMCPServer:
                         "properties": {},
                     },
                 ),
+                Tool(
+                    name="add_tags",
+                    description="Add tags to an entity. Tags must already exist in DataHub.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "urn": {"type": "string", "description": "Entity URN"},
+                            "entity_type": {"type": "string", "description": "Entity type (dataset, dashboard, etc.)"},
+                            "platform": {"type": "string", "description": "Data platform"},
+                            "name": {"type": "string", "description": "Dataset name"},
+                            "env": {"type": "string", "description": "Environment (PROD, DEV, etc.)"},
+                            "tag_names": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of tag names to add",
+                            },
+                        },
+                        "required": ["tag_names"],
+                    },
+                ),
+                Tool(
+                    name="remove_tags",
+                    description="Remove tags from an entity.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "urn": {"type": "string", "description": "Entity URN"},
+                            "entity_type": {"type": "string", "description": "Entity type"},
+                            "platform": {"type": "string", "description": "Data platform"},
+                            "name": {"type": "string", "description": "Dataset name"},
+                            "env": {"type": "string", "description": "Environment"},
+                            "tag_names": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of tag names to remove",
+                            },
+                        },
+                        "required": ["tag_names"],
+                    },
+                ),
+                Tool(
+                    name="add_glossary_terms",
+                    description="Add glossary terms to an entity. Terms must already exist in DataHub.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "urn": {"type": "string", "description": "Entity URN"},
+                            "entity_type": {"type": "string", "description": "Entity type"},
+                            "platform": {"type": "string", "description": "Data platform"},
+                            "name": {"type": "string", "description": "Dataset name"},
+                            "env": {"type": "string", "description": "Environment"},
+                            "term_names": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of glossary term names to add",
+                            },
+                        },
+                        "required": ["term_names"],
+                    },
+                ),
+                Tool(
+                    name="remove_glossary_terms",
+                    description="Remove glossary terms from an entity.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "urn": {"type": "string", "description": "Entity URN"},
+                            "entity_type": {"type": "string", "description": "Entity type"},
+                            "platform": {"type": "string", "description": "Data platform"},
+                            "name": {"type": "string", "description": "Dataset name"},
+                            "env": {"type": "string", "description": "Environment"},
+                            "term_names": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of glossary term names to remove",
+                            },
+                        },
+                        "required": ["term_names"],
+                    },
+                ),
+                Tool(
+                    name="add_owners",
+                    description=(
+                        "Add owners to an entity. "
+                        "Owner type can be TECHNICAL_OWNER, BUSINESS_OWNER, DATA_STEWARD, or NONE."
+                    ),
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "urn": {"type": "string", "description": "Entity URN"},
+                            "entity_type": {"type": "string", "description": "Entity type"},
+                            "platform": {"type": "string", "description": "Data platform"},
+                            "name": {"type": "string", "description": "Dataset name"},
+                            "env": {"type": "string", "description": "Environment"},
+                            "owner_names": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of owner usernames",
+                            },
+                            "owner_type": {
+                                "type": "string",
+                                "description": "Owner type",
+                                "enum": ["TECHNICAL_OWNER", "BUSINESS_OWNER", "DATA_STEWARD", "NONE"],
+                                "default": "NONE",
+                            },
+                        },
+                        "required": ["owner_names"],
+                    },
+                ),
+                Tool(
+                    name="remove_owners",
+                    description="Remove owners from an entity.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "urn": {"type": "string", "description": "Entity URN"},
+                            "entity_type": {"type": "string", "description": "Entity type"},
+                            "platform": {"type": "string", "description": "Data platform"},
+                            "name": {"type": "string", "description": "Dataset name"},
+                            "env": {"type": "string", "description": "Environment"},
+                            "owner_names": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of owner usernames to remove",
+                            },
+                        },
+                        "required": ["owner_names"],
+                    },
+                ),
+                Tool(
+                    name="update_description",
+                    description="Update the description of an entity.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "urn": {"type": "string", "description": "Entity URN"},
+                            "entity_type": {"type": "string", "description": "Entity type"},
+                            "platform": {"type": "string", "description": "Data platform"},
+                            "name": {"type": "string", "description": "Dataset name"},
+                            "env": {"type": "string", "description": "Environment"},
+                            "description": {
+                                "type": "string",
+                                "description": "New description text",
+                            },
+                        },
+                        "required": ["description"],
+                    },
+                ),
+                Tool(
+                    name="set_domain",
+                    description="Set the domain for an entity. Domain must already exist in DataHub.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "urn": {"type": "string", "description": "Entity URN"},
+                            "entity_type": {"type": "string", "description": "Entity type"},
+                            "platform": {"type": "string", "description": "Data platform"},
+                            "name": {"type": "string", "description": "Dataset name"},
+                            "env": {"type": "string", "description": "Environment"},
+                            "domain_name": {
+                                "type": "string",
+                                "description": "Domain name (not URN)",
+                            },
+                        },
+                        "required": ["domain_name"],
+                    },
+                ),
+                Tool(
+                    name="unset_domain",
+                    description="Remove the domain from an entity.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "urn": {"type": "string", "description": "Entity URN"},
+                            "entity_type": {"type": "string", "description": "Entity type"},
+                            "platform": {"type": "string", "description": "Data platform"},
+                            "name": {"type": "string", "description": "Dataset name"},
+                            "env": {"type": "string", "description": "Environment"},
+                        },
+                    },
+                ),
+                Tool(
+                    name="update_deprecation",
+                    description="Update the deprecation status of an entity.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "urn": {"type": "string", "description": "Entity URN"},
+                            "entity_type": {"type": "string", "description": "Entity type"},
+                            "platform": {"type": "string", "description": "Data platform"},
+                            "name": {"type": "string", "description": "Dataset name"},
+                            "env": {"type": "string", "description": "Environment"},
+                            "deprecated": {
+                                "type": "boolean",
+                                "description": "Whether the entity is deprecated",
+                            },
+                            "note": {
+                                "type": "string",
+                                "description": "Optional deprecation note",
+                            },
+                            "decommission_time": {
+                                "type": "integer",
+                                "description": "Optional decommission timestamp (milliseconds)",
+                            },
+                        },
+                        "required": ["deprecated"],
+                    },
+                ),
             ]
 
         @self.server.call_tool()
@@ -161,6 +369,26 @@ class DataHubMCPServer:
                     return await self._handle_get_entity_full(arguments)
                 elif name == "list_platforms":
                     return await self._handle_list_platforms(arguments)
+                elif name == "add_tags":
+                    return await self._handle_add_tags(arguments)
+                elif name == "remove_tags":
+                    return await self._handle_remove_tags(arguments)
+                elif name == "add_glossary_terms":
+                    return await self._handle_add_terms(arguments)
+                elif name == "remove_glossary_terms":
+                    return await self._handle_remove_terms(arguments)
+                elif name == "add_owners":
+                    return await self._handle_add_owners(arguments)
+                elif name == "remove_owners":
+                    return await self._handle_remove_owners(arguments)
+                elif name == "update_description":
+                    return await self._handle_update_description(arguments)
+                elif name == "set_domain":
+                    return await self._handle_set_domain(arguments)
+                elif name == "unset_domain":
+                    return await self._handle_unset_domain(arguments)
+                elif name == "update_deprecation":
+                    return await self._handle_update_deprecation(arguments)
                 else:
                     return [{"type": "text", "text": f"Unknown tool: {name}"}]
             except Exception as e:
@@ -236,6 +464,101 @@ class DataHubMCPServer:
                 "text": json.dumps({"platforms": platforms}, indent=2),
             }
         ]
+
+    async def _handle_add_tags(self, arguments: dict[str, Any]) -> list[dict[str, Any]]:
+        """Handle add_tags tool call."""
+        identifier = EntityIdentifier(**{k: v for k, v in arguments.items() if k != "tag_names"})
+        tag_names = arguments["tag_names"]
+
+        await self.tools.add_tags(identifier, tag_names)
+
+        return [{"type": "text", "text": f"Successfully added {len(tag_names)} tag(s)"}]
+
+    async def _handle_remove_tags(self, arguments: dict[str, Any]) -> list[dict[str, Any]]:
+        """Handle remove_tags tool call."""
+        identifier = EntityIdentifier(**{k: v for k, v in arguments.items() if k != "tag_names"})
+        tag_names = arguments["tag_names"]
+
+        await self.tools.remove_tags(identifier, tag_names)
+
+        return [{"type": "text", "text": f"Successfully removed {len(tag_names)} tag(s)"}]
+
+    async def _handle_add_terms(self, arguments: dict[str, Any]) -> list[dict[str, Any]]:
+        """Handle add_glossary_terms tool call."""
+        identifier = EntityIdentifier(**{k: v for k, v in arguments.items() if k != "term_names"})
+        term_names = arguments["term_names"]
+
+        await self.tools.add_terms(identifier, term_names)
+
+        return [{"type": "text", "text": f"Successfully added {len(term_names)} glossary term(s)"}]
+
+    async def _handle_remove_terms(self, arguments: dict[str, Any]) -> list[dict[str, Any]]:
+        """Handle remove_glossary_terms tool call."""
+        identifier = EntityIdentifier(**{k: v for k, v in arguments.items() if k != "term_names"})
+        term_names = arguments["term_names"]
+
+        await self.tools.remove_terms(identifier, term_names)
+
+        return [{"type": "text", "text": f"Successfully removed {len(term_names)} glossary term(s)"}]
+
+    async def _handle_add_owners(self, arguments: dict[str, Any]) -> list[dict[str, Any]]:
+        """Handle add_owners tool call."""
+        identifier = EntityIdentifier(**{k: v for k, v in arguments.items() if k not in ["owner_names", "owner_type"]})
+        owner_names = arguments["owner_names"]
+        owner_type = arguments.get("owner_type", "NONE")
+
+        await self.tools.add_owners(identifier, owner_names, owner_type)
+
+        return [{"type": "text", "text": f"Successfully added {len(owner_names)} owner(s)"}]
+
+    async def _handle_remove_owners(self, arguments: dict[str, Any]) -> list[dict[str, Any]]:
+        """Handle remove_owners tool call."""
+        identifier = EntityIdentifier(**{k: v for k, v in arguments.items() if k != "owner_names"})
+        owner_names = arguments["owner_names"]
+
+        await self.tools.remove_owners(identifier, owner_names)
+
+        return [{"type": "text", "text": f"Successfully removed {len(owner_names)} owner(s)"}]
+
+    async def _handle_update_description(self, arguments: dict[str, Any]) -> list[dict[str, Any]]:
+        """Handle update_description tool call."""
+        identifier = EntityIdentifier(**{k: v for k, v in arguments.items() if k != "description"})
+        description = arguments["description"]
+
+        await self.tools.update_description(identifier, description)
+
+        return [{"type": "text", "text": "Successfully updated description"}]
+
+    async def _handle_set_domain(self, arguments: dict[str, Any]) -> list[dict[str, Any]]:
+        """Handle set_domain tool call."""
+        identifier = EntityIdentifier(**{k: v for k, v in arguments.items() if k != "domain_name"})
+        domain_name = arguments["domain_name"]
+
+        await self.tools.set_domain(identifier, domain_name)
+
+        return [{"type": "text", "text": f"Successfully set domain to {domain_name}"}]
+
+    async def _handle_unset_domain(self, arguments: dict[str, Any]) -> list[dict[str, Any]]:
+        """Handle unset_domain tool call."""
+        identifier = EntityIdentifier(**arguments)
+
+        await self.tools.unset_domain(identifier)
+
+        return [{"type": "text", "text": "Successfully unset domain"}]
+
+    async def _handle_update_deprecation(self, arguments: dict[str, Any]) -> list[dict[str, Any]]:
+        """Handle update_deprecation tool call."""
+        identifier = EntityIdentifier(
+            **{k: v for k, v in arguments.items() if k not in ["deprecated", "note", "decommission_time"]}
+        )
+        deprecated = arguments["deprecated"]
+        note = arguments.get("note")
+        decommission_time = arguments.get("decommission_time")
+
+        await self.tools.update_deprecation(identifier, deprecated, note, decommission_time)
+
+        status = "deprecated" if deprecated else "not deprecated"
+        return [{"type": "text", "text": f"Successfully updated deprecation status to {status}"}]
 
     async def cleanup(self) -> None:
         """Cleanup server resources."""

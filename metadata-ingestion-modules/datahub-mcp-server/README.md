@@ -14,19 +14,22 @@ The DataHub MCP Server provides a standardized interface for AI assistants to in
 
 ## Features
 
-### Phase 1: Read-Only Operations (Current)
+### Phase 1: Read-Only Operations ✅
 
 - Search assets with filters and facets
 - Get full entity state (all aspects)
-- Navigate lineage and relationships
+- List supported platforms
 - Platform-aware URN resolution
 
-### Phase 2: Single-Entity Edits (Planned)
+### Phase 2: Single-Entity Edits ✅
 
-- Add/remove tags, terms, owners
-- Update descriptions and documentation
-- Set domains and deprecation status
-- Patch-based updates for safety
+- **Tags**: Add/remove tags to/from entities
+- **Glossary Terms**: Add/remove glossary terms to/from entities
+- **Ownership**: Add/remove owners with owner types (TECHNICAL_OWNER, BUSINESS_OWNER, DATA_STEWARD)
+- **Descriptions**: Update entity descriptions
+- **Domains**: Set/unset domains for entities
+- **Deprecation**: Update deprecation status with optional notes and decommission time
+- GraphQL-based mutations for UI-parity operations
 
 ### Phase 3: Bulk Operations (Planned)
 
@@ -51,6 +54,36 @@ pip install -e .[dev]
 # Start the MCP server
 datahub-mcp-server --datahub-url http://localhost:8080 --token <your-token>
 ```
+
+### Available MCP Tools
+
+#### Discovery & Read Operations
+
+- `search_assets` - Search for assets with filters (platform, env, tags, domains)
+- `get_entity_full` - Get complete entity state with all aspects
+- `list_platforms` - List supported platforms and their conventions
+
+#### Tag Management
+
+- `add_tags` - Add tags to an entity (tags must exist in DataHub)
+- `remove_tags` - Remove tags from an entity
+
+#### Glossary Term Management
+
+- `add_glossary_terms` - Add glossary terms to an entity (terms must exist)
+- `remove_glossary_terms` - Remove glossary terms from an entity
+
+#### Ownership Management
+
+- `add_owners` - Add owners with specified type (TECHNICAL_OWNER, BUSINESS_OWNER, etc.)
+- `remove_owners` - Remove owners from an entity
+
+#### Documentation & Metadata
+
+- `update_description` - Update entity description
+- `set_domain` - Set the domain for an entity (domain must exist)
+- `unset_domain` - Remove domain from an entity
+- `update_deprecation` - Mark entity as deprecated/not deprecated with optional note
 
 ## Architecture
 
