@@ -3,11 +3,15 @@
 from typing import Any, Optional
 
 from datahub_mcp_server.clients import GraphQLClient, OpenAPIClient
+from datahub_mcp_server.entity_creator import EntityCreator
 from datahub_mcp_server.models import (
     BulkOperationResult,
+    ContainerCreateRequest,
+    DatasetCreateRequest,
     EntityFull,
     EntityIdentifier,
     LineageResponse,
+    SchemaField,
     SearchResponse,
 )
 from datahub_mcp_server.utils import UrnResolver
@@ -29,6 +33,7 @@ class DataHubTools:
         self.openapi_client = openapi_client
         self.graphql_client = graphql_client
         self.urn_resolver = urn_resolver
+        self.entity_creator = EntityCreator(openapi_client, urn_resolver)
 
     async def search_assets(
         self,
@@ -707,6 +712,102 @@ class DataHubTools:
             entity_type=entity_type,
             aspects=aspects,
         )
+
+    async def create_dataset(
+        self,
+        platform: str,
+        name: str,
+        schema_fields: list[dict[str, Any]],
+        env: str = "PROD",
+        platform_instance: Optional[str] = None,
+        description: str = "",
+        container_urn: Optional[str] = None,
+        subtype: str = "Table",
+        external_url: Optional[str] = None,
+        custom_properties: Optional[dict[str, str]] = None,
+    ) -> dict[str, str]:
+        """Create a new dataset entity in DataHub.
+
+        Args:
+            platform: Platform name (snowflake, bigquery, mysql, etc.)
+            name: Dataset name (e.g., "db.schema.table" for Snowflake)
+            schema_fields: List of field definitions with keys:
+                - field_path: Field name
+                - native_data_type: Native type (e.g., "VARCHAR(255)")
+                - field_type: Type category (string, number, boolean, date, timestamp, bytes)
+                - description: Optional field description
+                - nullable: Optional boolean (default False)
+                - is_part_of_key: Optional boolean (default False)
+            env: Environment (PROD, DEV, etc.)
+            platform_instance: Platform instance identifier
+            description: Dataset description
+            container_urn: Parent container URN (optional)
+            subtype: Dataset subtype (Table, View, External)
+            external_url: External URL to the dataset
+            custom_properties: Custom properties dictionary
+
+        Returns:
+            {"urn": "urn:li:dataset:...", "status": "created"}
+        """
+        parsed_fields = [SchemaField(**field) for field in schema_fields]
+
+        request = DatasetCreateRequest(
+            platform=platform,
+            name=name,
+            env=env,
+            platform_instance=platform_instance,
+            description=description,
+            schema_fields=parsed_fields,
+            container_urn=container_urn,
+            subtype=subtype,
+            external_url=external_url,
+            custom_properties=custom_properties or {},
+        )
+
+        urn = await self.entity_creator.create_dataset(request)
+
+        return {"urn": urn, "status": "created"}
+
+    async def create_container(
+        self,
+        platform: str,
+        name: str,
+        container_type: str,
+        env: str = "PROD",
+        description: str = "",
+        parent_container_urn: Optional[str] = None,
+        external_url: Optional[str] = None,
+        custom_properties: Optional[dict[str, str]] = None,
+    ) -> dict[str, str]:
+        """Create a new container entity in DataHub.
+
+        Args:
+            platform: Platform name
+            name: Container name
+            container_type: Type of container (Database, Schema, Project, Dataset)
+            env: Environment
+            description: Container description
+            parent_container_urn: Parent container URN for nested containers
+            external_url: External URL to the container
+            custom_properties: Custom properties dictionary
+
+        Returns:
+            {"urn": "urn:li:container:...", "status": "created"}
+        """
+        request = ContainerCreateRequest(
+            platform=platform,
+            name=name,
+            env=env,
+            container_type=container_type,
+            description=description,
+            parent_container_urn=parent_container_urn,
+            external_url=external_url,
+            custom_properties=custom_properties or {},
+        )
+
+        urn = await self.entity_creator.create_container(request)
+
+        return {"urn": urn, "status": "created"}
 
 
 __all__ = ["DataHubTools"]

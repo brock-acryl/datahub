@@ -41,6 +41,15 @@ The DataHub MCP Server provides a standardized interface for AI assistants to in
 - Detailed success/failure reporting with error details
 - High-throughput batch processing
 
+### Phase 4: Entity Creation ✅
+
+- **Dataset Creation**: Create new datasets with platform-specific naming conventions
+- **Container Creation**: Create containers (databases, schemas, projects)
+- **Schema Definition**: Define dataset schemas with field types and metadata
+- **Aspect-Complete**: Creates all required aspects (status, properties, schema, subTypes, etc.)
+- **Golden File Patterns**: Follows DataHub connector conventions from golden test files
+- **Platform-Aware**: Supports Snowflake, BigQuery, MySQL, Postgres, Redshift naming patterns
+
 ## Installation
 
 ```bash
@@ -100,6 +109,45 @@ datahub-mcp-server --datahub-url http://localhost:8080 --token <your-token>
 - `bulk_update_descriptions` - Update descriptions for multiple entities
 
 All bulk operations return detailed results with success/failure counts and error details.
+
+#### Entity Creation (Phase 4)
+
+- `create_dataset` - Create a new dataset entity with schema definition
+  - Supports platform-specific naming: Snowflake (`db.schema.table`), BigQuery (`project.dataset.table`), MySQL (`database.table`)
+  - Define schema fields with types (string, number, boolean, date, timestamp, bytes, array, record)
+  - Set descriptions, subtypes (Table, View, External), container hierarchy
+  - Creates all required aspects following DataHub conventions
+
+- `create_container` - Create a new container entity (Database, Schema, Project, Dataset)
+  - Organize entities in hierarchies
+  - Set parent containers for nested structures
+  - Platform-specific properties and metadata
+
+**Example: Create a Snowflake dataset**
+```json
+{
+  "platform": "snowflake",
+  "name": "analytics_db.sales.customers",
+  "schema_fields": [
+    {
+      "field_path": "customer_id",
+      "native_data_type": "NUMBER(38,0)",
+      "field_type": "number",
+      "description": "Unique customer identifier",
+      "is_part_of_key": true
+    },
+    {
+      "field_path": "email",
+      "native_data_type": "VARCHAR(255)",
+      "field_type": "string",
+      "description": "Customer email address"
+    }
+  ],
+  "description": "Customer master data table",
+  "subtype": "Table",
+  "env": "PROD"
+}
+```
 
 ## Architecture
 

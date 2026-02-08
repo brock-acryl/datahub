@@ -143,6 +143,72 @@ class BulkOperationResult(BaseModel):
     )
 
 
+class SchemaField(BaseModel):
+    """Schema field definition for dataset creation."""
+
+    field_path: str = Field(description="Field path/name")
+    nullable: bool = Field(default=False, description="Whether field can be null")
+    description: str = Field(default="", description="Field description")
+    native_data_type: str = Field(description="Native data type (e.g., VARCHAR(255), INT)")
+    field_type: str = Field(description="Field type (string, number, boolean, date, timestamp, bytes, array, record)")
+    is_part_of_key: bool = Field(
+        default=False,
+        description="Whether field is part of the primary key",
+    )
+
+
+class DatasetCreateRequest(BaseModel):
+    """Request to create a dataset entity."""
+
+    platform: str = Field(description="Platform name (snowflake, bigquery, mysql, etc.)")
+    name: str = Field(description="Dataset name (e.g., db.schema.table)")
+    env: str = Field(default="PROD", description="Environment (PROD, DEV, etc.)")
+    platform_instance: Optional[str] = Field(
+        default=None,
+        description="Platform instance identifier",
+    )
+    description: str = Field(default="", description="Dataset description")
+    schema_fields: list[SchemaField] = Field(
+        default_factory=list,
+        description="Schema field definitions",
+    )
+    container_urn: Optional[str] = Field(
+        default=None,
+        description="Parent container URN",
+    )
+    subtype: str = Field(default="Table", description="Dataset subtype (Table, View, External)")
+    external_url: Optional[str] = Field(
+        default=None,
+        description="External URL to the dataset",
+    )
+    custom_properties: dict[str, str] = Field(
+        default_factory=dict,
+        description="Custom properties",
+    )
+
+
+class ContainerCreateRequest(BaseModel):
+    """Request to create a container entity."""
+
+    platform: str = Field(description="Platform name")
+    name: str = Field(description="Container name")
+    env: str = Field(default="PROD", description="Environment")
+    container_type: str = Field(description="Container type (Database, Schema, Project, Dataset)")
+    description: str = Field(default="", description="Container description")
+    parent_container_urn: Optional[str] = Field(
+        default=None,
+        description="Parent container URN for nested containers",
+    )
+    external_url: Optional[str] = Field(
+        default=None,
+        description="External URL to the container",
+    )
+    custom_properties: dict[str, str] = Field(
+        default_factory=dict,
+        description="Custom properties",
+    )
+
+
 __all__ = [
     "EntityIdentifier",
     "EntityAspect",
@@ -154,4 +220,7 @@ __all__ = [
     "LineageResponse",
     "PatchOperation",
     "BulkOperationResult",
+    "SchemaField",
+    "DatasetCreateRequest",
+    "ContainerCreateRequest",
 ]

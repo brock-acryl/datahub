@@ -523,6 +523,139 @@ class DataHubMCPServer:
                         "required": ["updates"],
                     },
                 ),
+                Tool(
+                    name="create_dataset",
+                    description=(
+                        "Create a new dataset entity in DataHub with schema definition. "
+                        "This creates a dataset following platform-specific naming conventions "
+                        "and includes all required aspects (status, properties, schema, etc.)."
+                    ),
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "platform": {
+                                "type": "string",
+                                "description": "Platform name (snowflake, bigquery, mysql, postgres, etc.)",
+                            },
+                            "name": {
+                                "type": "string",
+                                "description": (
+                                    "Dataset name following platform conventions: "
+                                    "Snowflake: 'db.schema.table', "
+                                    "BigQuery: 'project.dataset.table', "
+                                    "MySQL: 'database.table'"
+                                ),
+                            },
+                            "schema_fields": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "field_path": {"type": "string"},
+                                        "native_data_type": {"type": "string"},
+                                        "field_type": {
+                                            "type": "string",
+                                            "enum": [
+                                                "string",
+                                                "number",
+                                                "boolean",
+                                                "date",
+                                                "timestamp",
+                                                "bytes",
+                                                "array",
+                                                "record",
+                                            ],
+                                        },
+                                        "description": {"type": "string"},
+                                        "nullable": {"type": "boolean"},
+                                        "is_part_of_key": {"type": "boolean"},
+                                    },
+                                    "required": ["field_path", "native_data_type", "field_type"],
+                                },
+                                "description": "List of schema field definitions",
+                            },
+                            "env": {
+                                "type": "string",
+                                "description": "Environment (PROD, DEV, etc.)",
+                                "default": "PROD",
+                            },
+                            "platform_instance": {
+                                "type": "string",
+                                "description": "Platform instance identifier (optional)",
+                            },
+                            "description": {
+                                "type": "string",
+                                "description": "Dataset description",
+                            },
+                            "container_urn": {
+                                "type": "string",
+                                "description": "Parent container URN (optional)",
+                            },
+                            "subtype": {
+                                "type": "string",
+                                "description": "Dataset subtype (Table, View, External)",
+                                "default": "Table",
+                            },
+                            "external_url": {
+                                "type": "string",
+                                "description": "External URL to the dataset",
+                            },
+                            "custom_properties": {
+                                "type": "object",
+                                "description": "Custom properties as key-value pairs",
+                                "additionalProperties": {"type": "string"},
+                            },
+                        },
+                        "required": ["platform", "name", "schema_fields"],
+                    },
+                ),
+                Tool(
+                    name="create_container",
+                    description=(
+                        "Create a new container entity in DataHub (Database, Schema, Project, etc.). "
+                        "Containers organize datasets and other entities in hierarchies."
+                    ),
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "platform": {
+                                "type": "string",
+                                "description": "Platform name",
+                            },
+                            "name": {
+                                "type": "string",
+                                "description": "Container name",
+                            },
+                            "container_type": {
+                                "type": "string",
+                                "description": "Container type (Database, Schema, Project, Dataset)",
+                            },
+                            "env": {
+                                "type": "string",
+                                "description": "Environment",
+                                "default": "PROD",
+                            },
+                            "description": {
+                                "type": "string",
+                                "description": "Container description",
+                            },
+                            "parent_container_urn": {
+                                "type": "string",
+                                "description": "Parent container URN for nested containers",
+                            },
+                            "external_url": {
+                                "type": "string",
+                                "description": "External URL to the container",
+                            },
+                            "custom_properties": {
+                                "type": "object",
+                                "description": "Custom properties as key-value pairs",
+                                "additionalProperties": {"type": "string"},
+                            },
+                        },
+                        "required": ["platform", "name", "container_type"],
+                    },
+                ),
             ]
 
         @self.server.call_tool()
@@ -571,6 +704,10 @@ class DataHubMCPServer:
                     return await self._handle_bulk_set_domain(arguments)
                 elif name == "bulk_update_descriptions":
                     return await self._handle_bulk_update_descriptions(arguments)
+                elif name == "create_dataset":
+                    return await self._handle_create_dataset(arguments)
+                elif name == "create_container":
+                    return await self._handle_create_container(arguments)
                 else:
                     return [{"type": "text", "text": f"Unknown tool: {name}"}]
             except Exception as e:
@@ -820,6 +957,38 @@ class DataHubMCPServer:
         result = await self.tools.bulk_update_descriptions(updates)
 
         return [{"type": "text", "text": result.model_dump_json(indent=2)}]
+
+    async def _handle_create_dataset(self, arguments: dict[str, Any]) -> list[dict[str, Any]]:
+        """Handle create_dataset tool call."""
+        result = await self.tools.create_dataset(
+            platform=arguments["platform"],
+            name=arguments["name"],
+            schema_fields=arguments["schema_fields"],
+            env=arguments.get("env", "PROD"),
+            platform_instance=arguments.get("platform_instance"),
+            description=arguments.get("description", ""),
+            container_urn=arguments.get("container_urn"),
+            subtype=arguments.get("subtype", "Table"),
+            external_url=arguments.get("external_url"),
+            custom_properties=arguments.get("custom_properties"),
+        )
+
+        return [{"type": "text", "text": f"Created dataset: {result['urn']}"}]
+
+    async def _handle_create_container(self, arguments: dict[str, Any]) -> list[dict[str, Any]]:
+        """Handle create_container tool call."""
+        result = await self.tools.create_container(
+            platform=arguments["platform"],
+            name=arguments["name"],
+            container_type=arguments["container_type"],
+            env=arguments.get("env", "PROD"),
+            description=arguments.get("description", ""),
+            parent_container_urn=arguments.get("parent_container_urn"),
+            external_url=arguments.get("external_url"),
+            custom_properties=arguments.get("custom_properties"),
+        )
+
+        return [{"type": "text", "text": f"Created container: {result['urn']}"}]
 
     async def cleanup(self) -> None:
         """Cleanup server resources."""
